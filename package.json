@@ -36,6 +36,14 @@
     "critic",
     "code-review"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dustinfox-code/arbiter.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dustinfox-code/arbiter/issues"
+  },
+  "homepage": "https://github.com/dustinfox-code/arbiter#readme",
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0"
