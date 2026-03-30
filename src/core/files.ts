@@ -58,9 +58,11 @@ export async function resolveContextFiles(
   if (!files) return []
 
   if (files === 'git-diff') {
+    // Validate cwd is a real absolute path (no injection via cwd)
+    const resolvedCwd = resolve(cwd)
     try {
       const output = execFileSync('git', ['diff', '--name-only', 'HEAD'], {
-        cwd,
+        cwd: resolvedCwd,
         encoding: 'utf-8',
         timeout: 5000,
         stdio: ['pipe', 'pipe', 'pipe'],

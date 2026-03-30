@@ -275,6 +275,13 @@ async function handleCheckpoints(cwd: string, args: ParsedArgs): Promise<void> {
       return
     }
 
+    // Validate git hash to prevent command injection
+    if (!/^[a-f0-9]{4,40}$/i.test(checkpoint.gitHash)) {
+      console.error(`Invalid git hash: ${checkpoint.gitHash}`)
+      process.exitCode = 1
+      return
+    }
+
     console.log(`Restoring to checkpoint ${checkpoint.id} (git hash: ${checkpoint.gitHash.slice(0, 8)})`)
     const { execFileSync } = await import('node:child_process')
     try {

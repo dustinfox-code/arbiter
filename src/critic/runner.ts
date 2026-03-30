@@ -148,7 +148,8 @@ async function runPersona(
     }
 
     const content = (response as { content: Array<{ type: string; text: string }> }).content
-    if (!content || content.length === 0 || content[0].type !== 'text') {
+    const firstContent = Array.isArray(content) ? content[0] : undefined
+    if (!firstContent || firstContent.type !== 'text' || typeof firstContent.text !== 'string') {
       return {
         passed: false,
         persona: persona.id,
@@ -157,7 +158,17 @@ async function runPersona(
       }
     }
 
-    const parsed = parsePersonaResponse(content[0].text)
+    let parsed: ParsedPersonaResponse
+    try {
+      parsed = parsePersonaResponse(firstContent.text)
+    } catch (parseErr: unknown) {
+      return {
+        passed: false,
+        persona: persona.id,
+        findings: [{ severity: 'error', message: `Failed to parse persona response: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}` }],
+        summary: 'Persona response was not valid JSON',
+      }
+    }
     const findings = normalizeFindings(parsed.findings)
 
     return {
