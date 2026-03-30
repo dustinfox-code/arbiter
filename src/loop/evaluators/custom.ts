@@ -58,13 +58,13 @@ export async function evaluateCustom(
       }
     }
 
-    let timer: ReturnType<typeof setTimeout>
+    let timer: ReturnType<typeof setTimeout> | undefined
     const result = await Promise.race([
       evaluate(criteria, payload, cwd),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error('Custom evaluator timed out after 30s')), CUSTOM_TIMEOUT_MS)
       }),
-    ]).finally(() => clearTimeout(timer!))
+    ]).finally(() => clearTimeout(timer))
 
     return {
       criteriaId: criteria.id,
@@ -80,7 +80,7 @@ export async function evaluateCustom(
       passed: false,
       required: criteria.required,
       description: criteria.description,
-      feedback: `Custom evaluator error: ${(err as Error).message}`,
+      feedback: `Custom evaluator error: ${err instanceof Error ? err.message : String(err)}`,
       durationMs: Date.now() - start,
     }
   }

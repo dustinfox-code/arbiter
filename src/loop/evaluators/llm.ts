@@ -70,7 +70,7 @@ export async function evaluateLlm(
 
     const model = (criteria.config.model as string) || llmModel
 
-    let timer: ReturnType<typeof setTimeout>
+    let timer: ReturnType<typeof setTimeout> | undefined
     const response = await Promise.race([
       client.messages.create({
         model,
@@ -82,7 +82,7 @@ export async function evaluateLlm(
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error('LLM evaluation timed out')), timeout)
       }),
-    ]).finally(() => clearTimeout(timer!))
+    ]).finally(() => clearTimeout(timer))
 
     if (!response.content || response.content.length === 0) {
       return {
@@ -135,7 +135,7 @@ export async function evaluateLlm(
       passed: false,
       required: criteria.required,
       description: criteria.description,
-      feedback: `LLM evaluator error: ${(err as Error).message}`,
+      feedback: `LLM evaluator error: ${err instanceof Error ? err.message : String(err)}`,
       durationMs: Date.now() - start,
     }
   }
