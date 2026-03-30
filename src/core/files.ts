@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
-import { execSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 
 /**
  * Validate that a resolved path is within the given base directory.
@@ -23,7 +23,7 @@ export async function resolveContextFiles(
 
   if (files === 'git-diff') {
     try {
-      const output = execSync('git diff --name-only HEAD~1', {
+      const output = execFileSync('git', ['diff', '--name-only', 'HEAD~1'], {
         cwd,
         encoding: 'utf-8',
         timeout: 5000,
@@ -38,7 +38,12 @@ export async function resolveContextFiles(
 
   if (Array.isArray(files)) {
     const results: { path: string; content: string }[] = []
-    for (const filePath of files as string[]) {
+    for (const raw of files) {
+      if (typeof raw !== 'string') {
+        results.push({ path: String(raw), content: '[Skipped: non-string path]' })
+        continue
+      }
+      const filePath = raw
       const resolvedPath = resolve(cwd, filePath)
       if (!isPathContained(cwd, resolvedPath)) {
         results.push({ path: filePath, content: `[Skipped: path escapes project directory]` })

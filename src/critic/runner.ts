@@ -6,6 +6,7 @@ import { pooled } from '../core/pool.js'
 const CONCURRENCY = 3
 const DEFAULT_TIMEOUT_MS = 60_000
 const MAX_FILE_LINES = 500
+const MAX_TOTAL_CHARS = 100_000
 
 export interface CriticRunOptions {
   cwd: string
@@ -57,7 +58,7 @@ function parsePersonaResponse(text: string): ParsedPersonaResponse {
     }
   }
 
-  throw new Error(`Failed to parse persona response as JSON: ${text.slice(0, 300)}`)
+  throw new Error(`Failed to parse persona response as JSON (response length: ${text.length} chars)`)
 }
 
 /**
@@ -80,8 +81,18 @@ function buildUserMessage(
   if (contextFiles.length === 0) {
     msg += '\nNo files provided for review.\n'
   } else {
+    let totalChars = msg.length
+    let included = 0
     for (const file of contextFiles) {
-      msg += `\n### ${file.path}\n\`\`\`\n${truncateContent(file.content)}\n\`\`\`\n`
+      const truncated = truncateContent(file.content)
+      const block = `\n### ${file.path}\n\`\`\`\n${truncated}\n\`\`\`\n`
+      if (totalChars + block.length > MAX_TOTAL_CHARS && included > 0) {
+        msg += `\n[... ${contextFiles.length - included} more file(s) omitted — total context budget exceeded]\n`
+        break
+      }
+      msg += block
+      totalChars += block.length
+      included++
     }
   }
   return msg
@@ -113,7 +124,7 @@ async function runPersona(
   model: string,
   timeout: number,
 ): Promise<ReviewResult> {
-  let timer: ReturnType<typeof setTimeout>
+  let timer: ReturnType<typeof setTimeout> | undefined
   try {
     const response = await Promise.race([
       client.messages.create({
@@ -125,7 +136,16 @@ async function runPersona(
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error('Critic persona timed out')), timeout)
       }),
-    ]).finally(() => clearTimeout(timer!))
+    ]).finally(() => clearTimeout(timer))
+
+    if (!response || typeof response !== 'object' || !('content' in response)) {
+      return {
+        passed: false,
+        persona: persona.id,
+        findings: [{ severity: 'error', message: 'Persona returned unexpected response shape' }],
+        summary: 'Persona returned unexpected response shape',
+      }
+    }
 
     const content = (response as { content: Array<{ type: string; text: string }> }).content
     if (!content || content.length === 0 || content[0].type !== 'text') {
@@ -147,11 +167,12 @@ async function runPersona(
       summary: parsed.summary,
     }
   } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err)
     return {
       passed: false,
       persona: persona.id,
-      findings: [{ severity: 'error', message: `Persona error: ${(err as Error).message}` }],
-      summary: `Persona failed: ${(err as Error).message}`,
+      findings: [{ severity: 'error', message: `Persona error: ${errMsg}` }],
+      summary: `Persona failed: ${errMsg}`,
     }
   }
 }

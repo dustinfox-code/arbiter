@@ -17,15 +17,16 @@ export async function evaluateCritic(
   taskDescription: string,
 ): Promise<CriteriaResult> {
   const start = Date.now()
+  const cfg = criteria.config ?? {}
 
-  const personaIds = Array.isArray(criteria.config.personas)
-    ? criteria.config.personas as string[]
+  const personaIds = Array.isArray(cfg.personas)
+    ? cfg.personas as string[]
     : config.critic.personas
 
-  const files = (criteria.config.files as string[] | 'git-diff') ?? 'git-diff'
+  const files = (cfg.files as string[] | 'git-diff') ?? 'git-diff'
 
-  const timeout = typeof criteria.config.timeout === 'number'
-    ? criteria.config.timeout
+  const timeout = typeof cfg.timeout === 'number'
+    ? cfg.timeout
     : undefined
 
   try {
