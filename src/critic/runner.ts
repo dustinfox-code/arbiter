@@ -284,8 +284,13 @@ export async function runCritic(options: CriticRunOptions): Promise<CriticRunRes
   }
 
   // Dynamic import of SDK — once, shared across all persona tasks
-  const { default: Anthropic } = await import('@anthropic-ai/sdk')
-  const client = new Anthropic({ maxRetries: 2 })
+  let client: { messages: { create: (params: Record<string, unknown>) => Promise<Record<string, unknown>> } }
+  try {
+    const { default: Anthropic } = await import('@anthropic-ai/sdk')
+    client = new Anthropic({ maxRetries: 2 }) as never
+  } catch {
+    throw new Error('Anthropic SDK (@anthropic-ai/sdk) is not installed. Run: npm install @anthropic-ai/sdk')
+  }
 
   // Build the shared user message
   const userMessage = buildUserMessage(taskDescription, contextFiles)

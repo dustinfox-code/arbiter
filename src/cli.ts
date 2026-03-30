@@ -84,8 +84,9 @@ async function handleInit(cwd: string): Promise<void> {
 
   // Check if arbiter hook already present
   const alreadyWired = stopHooks.some((entry) => {
-    const innerHooks = entry.hooks as Array<Record<string, unknown>> | undefined
-    return innerHooks?.some((h) =>
+    const innerHooks = entry.hooks
+    if (!Array.isArray(innerHooks)) return false
+    return innerHooks.some((h: Record<string, unknown>) =>
       typeof h.command === 'string' && h.command.includes('arbiter-cc'),
     )
   })
@@ -152,7 +153,7 @@ If you believe a criterion is incorrectly failing due to an environment
 issue (not a code issue), say so explicitly in your response before
 stopping so the developer can investigate.
 
-Current task status: run \`arbiter task status\` to check.`)
+Current task status: run \`arbiter-cc task status\` to check.`)
   console.log('\n────────────────────────────────────────────────────────\n')
   console.log('Arbiter initialized. Run `arbiter-cc task start "<description>"` to begin.')
 }
@@ -183,7 +184,7 @@ async function handleTaskStart(cwd: string, args: ParsedArgs): Promise<void> {
   const maxIterationsRaw = args.flags['max-iterations']
     ? parseInt(args.flags['max-iterations'] as string, 10)
     : DEFAULT_CONFIG.maxIterations
-  if (isNaN(maxIterationsRaw) || maxIterationsRaw < 1) {
+  if (isNaN(maxIterationsRaw) || maxIterationsRaw < 1 || !Number.isInteger(maxIterationsRaw)) {
     console.error('--max-iterations must be a positive integer')
     process.exitCode = 1
     return

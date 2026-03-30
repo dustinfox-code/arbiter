@@ -1,4 +1,4 @@
-import { readFile, stat, readdir } from 'node:fs/promises'
+import { readFile, stat, readdir, realpath } from 'node:fs/promises'
 import { resolve, sep, join, relative } from 'node:path'
 import { execFileSync } from 'node:child_process'
 
@@ -94,7 +94,16 @@ export async function resolveContextFiles(
       }
       const filePath = raw
       const resolvedPath = resolve(cwd, filePath)
-      if (!isPathContained(cwd, resolvedPath)) {
+      // Resolve symlinks before containment check to prevent traversal
+      let realResolvedPath: string
+      try {
+        realResolvedPath = await realpath(resolvedPath)
+      } catch {
+        // File doesn't exist or can't resolve — containment check on original
+        realResolvedPath = resolvedPath
+      }
+      const realCwd = await realpath(cwd).catch(() => cwd)
+      if (!isPathContained(realCwd, realResolvedPath)) {
         results.push({ path: filePath, content: `[Skipped: path escapes project directory]` })
         continue
       }
