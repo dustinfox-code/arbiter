@@ -55,7 +55,7 @@ export async function evaluateCritic(
       passed: false,
       required: criteria.required,
       description: criteria.description,
-      feedback: `Critic evaluator error: ${(err as Error).message}`,
+      feedback: `Critic evaluator error: ${err instanceof Error ? err.message : String(err)}`,
       durationMs: Date.now() - start,
     }
   }
