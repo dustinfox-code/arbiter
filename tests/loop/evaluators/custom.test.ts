@@ -70,8 +70,8 @@ describe('evaluateCustom', () => {
       required: true,
       config: {},
     }
-    const result = await evaluateCustom(criteria, tempDir)
-    expect(result.passed).toBe(false)
-    expect(result.feedback).toContain('missing "path"')
+    await expect(evaluateCustom(criteria, tempDir)).rejects.toThrow(
+      "custom criteria requires a 'path' config field (string)"
+    )
   })
 })

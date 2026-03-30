@@ -50,8 +50,8 @@ describe('evaluateFileExists', () => {
       required: true,
       config: {},
     }
-    const result = await evaluateFileExists(criteria, tempDir)
-    expect(result.passed).toBe(false)
-    expect(result.feedback).toContain('missing "path"')
+    await expect(evaluateFileExists(criteria, tempDir)).rejects.toThrow(
+      "file-exists criteria requires a 'path' config field (string)"
+    )
   })
 })
