@@ -148,7 +148,7 @@ export class HookInterface {
     await taskManager.update({ status: 'running', iteration })
 
     // Step 6: Run all criteria.
-    const evaluator = new CriteriaEvaluator(cwd, config.llmModel)
+    const evaluator = new CriteriaEvaluator(cwd, config.llmModel, config, task.description)
     const results = await evaluator.evaluate(task.criteria, payload ?? undefined)
 
     // Step 7: Write a checkpoint.

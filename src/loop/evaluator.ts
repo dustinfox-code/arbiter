@@ -1,4 +1,5 @@
-import type { CompletionCriteria, CriteriaResult, ClaudeStopPayload } from '../core/types.js'
+import type { CompletionCriteria, CriteriaResult, ClaudeStopPayload, ArbiterConfig } from '../core/types.js'
+import { DEFAULT_CONFIG } from '../core/types.js'
 import { pooled } from '../core/pool.js'
 import { evaluateCommand } from './evaluators/command.js'
 import { evaluateTestsPass } from './evaluators/tests-pass.js'
@@ -6,16 +7,21 @@ import { evaluateNoTsErrors } from './evaluators/no-ts-errors.js'
 import { evaluateFileExists } from './evaluators/file-exists.js'
 import { evaluateLlm } from './evaluators/llm.js'
 import { evaluateCustom } from './evaluators/custom.js'
+import { evaluateCritic } from './evaluators/critic.js'
 
 const CONCURRENCY = 3
 
 export class CriteriaEvaluator {
   private cwd: string
   private llmModel: string
+  private config: ArbiterConfig
+  private taskDescription: string
 
-  constructor(cwd: string, llmModel: string) {
+  constructor(cwd: string, llmModel: string, config?: ArbiterConfig, taskDescription?: string) {
     this.cwd = cwd
     this.llmModel = llmModel
+    this.config = config ?? DEFAULT_CONFIG
+    this.taskDescription = taskDescription ?? ''
   }
 
   /**
@@ -38,6 +44,8 @@ export class CriteriaEvaluator {
         return evaluateLlm(criteria, this.cwd, this.llmModel)
       case 'custom':
         return evaluateCustom(criteria, this.cwd, payload)
+      case 'critic':
+        return evaluateCritic(criteria, this.cwd, this.llmModel, this.config, this.taskDescription)
       default:
         return {
           criteriaId: criteria.id,

@@ -8,6 +8,7 @@ import { loadConfig } from './core/config.js'
 import { runHook } from './core/hook.js'
 import { DEFAULT_CONFIG } from './core/types.js'
 import type { CompletionCriteria } from './core/types.js'
+import { runCritic } from './critic/runner.js'
 
 // ── Argument parsing ──────────────────────────────────────────────
 
