@@ -1,6 +1,8 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import { execFileSync } from 'node:child_process'
+
+const MAX_FILE_BYTES = 1_024_000 // 1 MB — skip files larger than this
 
 /**
  * Validate that a resolved path is within the given base directory.
@@ -50,6 +52,11 @@ export async function resolveContextFiles(
         continue
       }
       try {
+        const info = await stat(resolvedPath)
+        if (info.size > MAX_FILE_BYTES) {
+          results.push({ path: filePath, content: `[Skipped: file too large (${Math.round(info.size / 1024)}KB, limit ${Math.round(MAX_FILE_BYTES / 1024)}KB)]` })
+          continue
+        }
         const content = await readFile(resolvedPath, 'utf-8')
         results.push({ path: filePath, content })
       } catch {
