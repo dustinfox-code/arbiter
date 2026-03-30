@@ -1,66 +1,9 @@
-import { readFile } from 'node:fs/promises'
-import { resolve, sep } from 'node:path'
-import { execSync } from 'node:child_process'
 import type { CompletionCriteria, CriteriaResult } from '../../core/types.js'
+import { resolveContextFiles } from '../../core/files.js'
 
 interface LlmEvaluationResponse {
   passed: boolean
   feedback: string | null
-}
-
-/**
- * Validate that a resolved path is within the given base directory.
- */
-function isPathContained(base: string, target: string): boolean {
-  const resolvedBase = resolve(base)
-  const resolvedTarget = resolve(target)
-  return resolvedTarget.startsWith(resolvedBase + sep) || resolvedTarget === resolvedBase
-}
-
-/**
- * Resolve which files to include as context for the LLM evaluator.
- * Validates that all paths stay within cwd.
- */
-async function resolveContextFiles(
-  files: unknown,
-  cwd: string,
-): Promise<{ path: string; content: string }[]> {
-  if (!files) return []
-
-  if (files === 'git-diff') {
-    try {
-      const output = execSync('git diff --name-only HEAD~1', {
-        cwd,
-        encoding: 'utf-8',
-        timeout: 5000,
-        stdio: ['pipe', 'pipe', 'pipe'],
-      }).trim()
-      const paths = output.split('\n').filter(Boolean)
-      return resolveContextFiles(paths, cwd)
-    } catch {
-      return []
-    }
-  }
-
-  if (Array.isArray(files)) {
-    const results: { path: string; content: string }[] = []
-    for (const filePath of files as string[]) {
-      const resolvedPath = resolve(cwd, filePath)
-      if (!isPathContained(cwd, resolvedPath)) {
-        results.push({ path: filePath, content: `[Skipped: path escapes project directory]` })
-        continue
-      }
-      try {
-        const content = await readFile(resolvedPath, 'utf-8')
-        results.push({ path: filePath, content })
-      } catch {
-        results.push({ path: filePath, content: `[File not readable: ${filePath}]` })
-      }
-    }
-    return results
-  }
-
-  return []
 }
 
 /**

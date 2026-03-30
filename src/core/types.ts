@@ -8,6 +8,7 @@ export type CriteriaType =
   | 'file-exists'
   | 'llm'
   | 'custom'
+  | 'critic'
 
 // The task being worked on and its current state
 export interface TaskContext {
@@ -87,6 +88,13 @@ export interface HookResult {
   summary: string          // Written to stderr — visible in Claude Code logs
 }
 
+// A user-defined critic persona loaded from config
+export interface CustomPersonaConfig {
+  id: string
+  description: string
+  systemPrompt: string
+}
+
 // Configuration loaded from .arbiter/config.json
 export interface ArbiterConfig {
   maxIterations: number           // Default: 5
@@ -97,6 +105,7 @@ export interface ArbiterConfig {
     enabled: boolean              // Default: false (Phase 2)
     personas: string[]            // Default: ["correctness", "edge-cases", "security"]
     failOnWarnings: boolean       // Default: false
+    customPersonas: CustomPersonaConfig[]  // Default: []
   }
 }
 
@@ -109,5 +118,6 @@ export const DEFAULT_CONFIG: ArbiterConfig = {
     enabled: false,
     personas: ['correctness', 'edge-cases', 'security'],
     failOnWarnings: false,
+    customPersonas: [],
   },
 }
