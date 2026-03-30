@@ -305,6 +305,92 @@ async function handleCheckpoints(cwd: string, args: ParsedArgs): Promise<void> {
   }
 }
 
+async function handleReview(cwd: string, args: ParsedArgs): Promise<void> {
+  const config = await loadConfig(cwd)
+
+  // Determine personas: --personas flag (comma-separated) or config default
+  const personaIds = typeof args.flags.personas === 'string'
+    ? args.flags.personas.split(',').map(s => s.trim()).filter(Boolean)
+    : config.critic.personas
+
+  // Determine files: --files flag or default to git-diff
+  let files: string[] | 'git-diff' = 'git-diff'
+  if (typeof args.flags.files === 'string') {
+    if (args.flags.files === 'git-diff') {
+      files = 'git-diff'
+    } else {
+      files = args.flags.files.split(',').map(s => s.trim()).filter(Boolean)
+    }
+  }
+
+  // Try to load task description for context (optional)
+  const taskManager = new TaskContextManager(cwd)
+  const task = await taskManager.load()
+  const taskDescription = task?.description ?? 'No task description available — review the code for general quality.'
+
+  console.log(`Arbiter Critic Review`)
+  console.log(`=====================\n`)
+  console.log(`Personas: ${personaIds.join(', ')}`)
+  console.log(`Files: ${typeof files === 'string' ? files : files.join(', ')}`)
+  console.log(`Task: ${taskDescription}\n`)
+
+  const result = await runCritic({
+    cwd,
+    taskDescription,
+    files,
+    personaIds,
+    customPersonas: config.critic.customPersonas,
+    llmModel: config.llmModel,
+    failOnWarnings: config.critic.failOnWarnings,
+  })
+
+  // Print findings grouped by persona
+  for (const r of result.results) {
+    const status = r.passed ? 'PASSED' : 'FAILED'
+    const errors = r.findings.filter(f => f.severity === 'error')
+    const warnings = r.findings.filter(f => f.severity === 'warning')
+    const infos = r.findings.filter(f => f.severity === 'info')
+
+    const counts: string[] = []
+    if (errors.length) counts.push(`${errors.length} error(s)`)
+    if (warnings.length) counts.push(`${warnings.length} warning(s)`)
+    if (infos.length) counts.push(`${infos.length} info`)
+    const countStr = counts.length ? ` (${counts.join(', ')})` : ''
+
+    console.log(`${r.persona} — ${status}${countStr}`)
+
+    if (r.findings.length === 0) {
+      console.log('  No findings.\n')
+      continue
+    }
+
+    for (const group of [
+      { label: 'ERROR', items: errors },
+      { label: 'WARN', items: warnings },
+      { label: 'INFO', items: infos },
+    ]) {
+      for (const f of group.items) {
+        const loc = f.location ? ` ${f.location}` : ''
+        console.log(`  ${group.label}${loc} — ${f.message}`)
+        if (f.suggestion) {
+          console.log(`         Fix: ${f.suggestion}`)
+        }
+      }
+    }
+    console.log()
+  }
+
+  // Summary
+  const totalErrors = result.results.reduce((n, r) => n + r.findings.filter(f => f.severity === 'error').length, 0)
+  const totalWarnings = result.results.reduce((n, r) => n + r.findings.filter(f => f.severity === 'warning').length, 0)
+  console.log('---')
+  console.log(`${totalErrors} error(s), ${totalWarnings} warning(s) across ${result.results.length} persona(s)`)
+
+  if (!result.passed) {
+    process.exitCode = 1
+  }
+}
+
 // ── Main ──────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -345,8 +431,12 @@ async function main(): Promise<void> {
       await handleCheckpoints(cwd, { positional: rest, flags })
       break
 
+    case 'review':
+      await handleReview(cwd, { positional: rest, flags })
+      break
+
     default:
-      console.log(`arbiter-cc — Loop agent for Claude Code
+      console.log(`arbiter-cc — Loop agent and critic for Claude Code
 
 Commands:
   init                          Initialize Arbiter in the current project
@@ -356,10 +446,13 @@ Commands:
   check                         Manually trigger stop hook evaluation
   checkpoints                   List all checkpoints
   checkpoints --restore <id>    Restore to a checkpoint
+  review                        Run adversarial critic review
 
 Flags:
   --max-iterations <n>          Max loop iterations (default: 5)
-  --force                       Force task start, replacing existing task`)
+  --force                       Force task start, replacing existing task
+  --personas <list>             Comma-separated personas for review
+  --files <list|git-diff>       Files to review (default: git-diff)`)
       if (command) {
         process.exitCode = 1
       }

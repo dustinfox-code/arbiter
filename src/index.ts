@@ -5,11 +5,19 @@ export { HookInterface, runHook } from './core/hook.js'
 export { CriteriaEvaluator } from './loop/evaluator.js'
 export { loadConfig } from './core/config.js'
 export { pooled } from './core/pool.js'
+export { resolveContextFiles, isPathContained } from './core/files.js'
+
+// Critic module
+export { runCritic } from './critic/runner.js'
+export type { CriticRunOptions, CriticRunResult } from './critic/runner.js'
+export { BUILT_IN_PERSONAS, resolvePersonas } from './critic/personas.js'
+export type { PersonaDefinition } from './critic/personas.js'
 
 // Types and constants
 export {
   DEFAULT_CONFIG,
   type ArbiterConfig,
+  type CustomPersonaConfig,
   type TaskContext,
   type CompletionCriteria,
   type CriteriaResult,
