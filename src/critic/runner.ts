@@ -71,31 +71,52 @@ function truncateContent(content: string): string {
 }
 
 /**
- * Build the user message containing task description and file contents.
+ * Content block with optional cache_control for Anthropic prompt caching.
  */
-function buildUserMessage(
+interface CacheableTextBlock {
+  type: 'text'
+  text: string
+  cache_control?: { type: 'ephemeral' }
+}
+
+/**
+ * Build user message as structured content blocks for prompt caching.
+ *
+ * Returns an array of content blocks where the file context block is marked
+ * with cache_control: { type: "ephemeral" } so repeated calls against the
+ * same files (e.g. multiple personas in one run) hit the cache.
+ */
+function buildUserMessageBlocks(
   taskDescription: string,
   contextFiles: { path: string; content: string }[],
-): string {
-  let msg = `## Task Description\n${taskDescription}\n\n## Files to Review\n`
+): CacheableTextBlock[] {
+  let filesText = '## Files to Review\n'
   if (contextFiles.length === 0) {
-    msg += '\nNo files provided for review.\n'
+    filesText += '\nNo files provided for review.\n'
   } else {
-    let totalChars = msg.length
+    let totalChars = filesText.length
     let included = 0
     for (const file of contextFiles) {
       const truncated = truncateContent(file.content)
       const block = `\n### ${file.path}\n\`\`\`\n${truncated}\n\`\`\`\n`
       if (totalChars + block.length > MAX_TOTAL_CHARS && included > 0) {
-        msg += `\n[... ${contextFiles.length - included} more file(s) omitted — total context budget exceeded]\n`
+        filesText += `\n[... ${contextFiles.length - included} more file(s) omitted — total context budget exceeded]\n`
         break
       }
-      msg += block
+      filesText += block
       totalChars += block.length
       included++
     }
   }
-  return msg
+
+  const taskText = `## Task Description\n${taskDescription}`
+
+  // File context comes first (prefix) with cache_control so it's cached
+  // across persona calls that share the same file set.
+  return [
+    { type: 'text', text: filesText, cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: taskText },
+  ]
 }
 
 /**
@@ -119,7 +140,7 @@ function normalizeFindings(findings: unknown[]): Finding[] {
  */
 async function runPersona(
   persona: PersonaDefinition,
-  userMessage: string,
+  userMessageBlocks: CacheableTextBlock[],
   client: { messages: { create: (params: Record<string, unknown>) => Promise<Record<string, unknown>> } },
   model: string,
   timeout: number,
@@ -131,8 +152,10 @@ async function runPersona(
         model,
         max_tokens: 4096,
         temperature: 0,
-        system: persona.systemPrompt,
-        messages: [{ role: 'user', content: userMessage }],
+        system: [
+          { type: 'text', text: persona.systemPrompt, cache_control: { type: 'ephemeral' } },
+        ],
+        messages: [{ role: 'user', content: userMessageBlocks }],
       }),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error('Critic persona timed out')), timeout)
@@ -293,13 +316,13 @@ export async function runCritic(options: CriticRunOptions): Promise<CriticRunRes
     throw new Error('Anthropic SDK (@anthropic-ai/sdk) is not installed. Run: npm install @anthropic-ai/sdk')
   }
 
-  // Build the shared user message
-  const userMessage = buildUserMessage(taskDescription, contextFiles)
+  // Build the shared user message blocks (file context is cache-marked)
+  const userMessageBlocks = buildUserMessageBlocks(taskDescription, contextFiles)
 
   // Run personas in parallel with bounded concurrency
   const tasks = personas.map(
     (persona) => async (): Promise<ReviewResult> =>
-      runPersona(persona, userMessage, client as never, llmModel, timeout),
+      runPersona(persona, userMessageBlocks, client as never, llmModel, timeout),
   )
   const results = await pooled(tasks, CONCURRENCY)
 
