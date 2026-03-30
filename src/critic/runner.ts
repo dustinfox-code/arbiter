@@ -130,6 +130,7 @@ async function runPersona(
       client.messages.create({
         model,
         max_tokens: 4096,
+        temperature: 0,
         system: persona.systemPrompt,
         messages: [{ role: 'user', content: userMessage }],
       }),
