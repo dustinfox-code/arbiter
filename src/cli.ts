@@ -179,9 +179,15 @@ async function handleTaskStart(cwd: string, args: ParsedArgs): Promise<void> {
     await taskManager.clear()
   }
 
-  const maxIterations = args.flags['max-iterations']
+  const maxIterationsRaw = args.flags['max-iterations']
     ? parseInt(args.flags['max-iterations'] as string, 10)
     : DEFAULT_CONFIG.maxIterations
+  if (isNaN(maxIterationsRaw) || maxIterationsRaw < 1) {
+    console.error('--max-iterations must be a positive integer')
+    process.exitCode = 1
+    return
+  }
+  const maxIterations = maxIterationsRaw
 
   const defaultCriteria: CompletionCriteria[] = [
     {
@@ -269,9 +275,9 @@ async function handleCheckpoints(cwd: string, args: ParsedArgs): Promise<void> {
     }
 
     console.log(`Restoring to checkpoint ${checkpoint.id} (git hash: ${checkpoint.gitHash.slice(0, 8)})`)
-    const { execSync } = await import('node:child_process')
+    const { execFileSync } = await import('node:child_process')
     try {
-      execSync(`git checkout ${checkpoint.gitHash}`, {
+      execFileSync('git', ['checkout', checkpoint.gitHash], {
         cwd,
         stdio: 'inherit',
       })

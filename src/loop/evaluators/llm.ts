@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { resolve, sep } from 'node:path'
 import { execSync } from 'node:child_process'
 import type { CompletionCriteria, CriteriaResult } from '../../core/types.js'
 
@@ -9,7 +9,17 @@ interface LlmEvaluationResponse {
 }
 
 /**
+ * Validate that a resolved path is within the given base directory.
+ */
+function isPathContained(base: string, target: string): boolean {
+  const resolvedBase = resolve(base)
+  const resolvedTarget = resolve(target)
+  return resolvedTarget.startsWith(resolvedBase + sep) || resolvedTarget === resolvedBase
+}
+
+/**
  * Resolve which files to include as context for the LLM evaluator.
+ * Validates that all paths stay within cwd.
  */
 async function resolveContextFiles(
   files: unknown,
@@ -35,8 +45,12 @@ async function resolveContextFiles(
   if (Array.isArray(files)) {
     const results: { path: string; content: string }[] = []
     for (const filePath of files as string[]) {
+      const resolvedPath = resolve(cwd, filePath)
+      if (!isPathContained(cwd, resolvedPath)) {
+        results.push({ path: filePath, content: `[Skipped: path escapes project directory]` })
+        continue
+      }
       try {
-        const resolvedPath = join(cwd, filePath)
         const content = await readFile(resolvedPath, 'utf-8')
         results.push({ path: filePath, content })
       } catch {
@@ -62,7 +76,7 @@ export async function evaluateLlm(
   const start = Date.now()
   const prompt = criteria.config.prompt as string
   const files = criteria.config.files
-  const timeout = (criteria.config.timeout as number) || 30000
+  const timeout = (criteria.config.timeout as number) ?? 30000
 
   if (!prompt) {
     return {
@@ -103,6 +117,7 @@ export async function evaluateLlm(
 
     const model = (criteria.config.model as string) || llmModel
 
+    let timer: ReturnType<typeof setTimeout>
     const response = await Promise.race([
       client.messages.create({
         model,
@@ -111,10 +126,21 @@ export async function evaluateLlm(
           'You are evaluating whether code meets a specific criterion. Respond with JSON matching this exact schema: { "passed": boolean, "feedback": string | null }. If the criterion is met, set passed to true and feedback to null. If not met, set passed to false and feedback to a specific, actionable explanation of what is not met and what needs to change. Do not include any text outside the JSON object.',
         messages: [{ role: 'user', content: userMessage }],
       }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('LLM evaluation timed out')), timeout),
-      ),
-    ])
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('LLM evaluation timed out')), timeout)
+      }),
+    ]).finally(() => clearTimeout(timer!))
+
+    if (!response.content || response.content.length === 0) {
+      return {
+        criteriaId: criteria.id,
+        passed: false,
+        required: criteria.required,
+        description: criteria.description,
+        feedback: 'LLM evaluator returned empty response',
+        durationMs: Date.now() - start,
+      }
+    }
 
     const content = response.content[0]
     if (content.type !== 'text') {

@@ -10,7 +10,18 @@ export async function evaluateCommand(
   cwd: string,
 ): Promise<CriteriaResult> {
   const start = Date.now()
-  const command = (criteria.config.command as string) || 'echo "no command configured"'
+  const command = criteria.config.command as string
+
+  if (!command) {
+    return {
+      criteriaId: criteria.id,
+      passed: false,
+      required: criteria.required,
+      description: criteria.description,
+      feedback: 'command criterion is missing "command" in config',
+      durationMs: Date.now() - start,
+    }
+  }
 
   return new Promise<CriteriaResult>((resolve) => {
     execFile('sh', ['-c', command], { cwd, timeout: 60000 }, (error, stdout, stderr) => {
