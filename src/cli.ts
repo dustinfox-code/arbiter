@@ -181,9 +181,12 @@ async function handleTaskStart(cwd: string, args: ParsedArgs): Promise<void> {
     await taskManager.clear()
   }
 
-  const maxIterationsRaw = args.flags['max-iterations']
-    ? parseInt(args.flags['max-iterations'] as string, 10)
-    : DEFAULT_CONFIG.maxIterations
+  const maxIterationsStr = args.flags['max-iterations']
+  const maxIterationsRaw = typeof maxIterationsStr === 'string' && /^\d+$/.test(maxIterationsStr)
+    ? parseInt(maxIterationsStr, 10)
+    : typeof maxIterationsStr === 'string'
+      ? NaN
+      : DEFAULT_CONFIG.maxIterations
   if (isNaN(maxIterationsRaw) || maxIterationsRaw < 1 || !Number.isInteger(maxIterationsRaw)) {
     console.error('--max-iterations must be a positive integer')
     process.exitCode = 1
@@ -276,15 +279,28 @@ async function handleCheckpoints(cwd: string, args: ParsedArgs): Promise<void> {
       return
     }
 
-    // Validate git hash to prevent command injection
-    if (!/^[a-f0-9]{7,40}$/i.test(checkpoint.gitHash)) {
-      console.error(`Invalid git hash: ${checkpoint.gitHash}`)
+    // Validate git hash format to prevent command injection
+    if (!/^[a-f0-9]{7,40}$/.test(checkpoint.gitHash)) {
+      console.error(`Invalid git hash format: ${checkpoint.gitHash}`)
+      process.exitCode = 1
+      return
+    }
+
+    const { execFileSync } = await import('node:child_process')
+
+    // Verify hash exists in repository before checkout
+    try {
+      execFileSync('git', ['cat-file', '-e', checkpoint.gitHash], {
+        cwd,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      })
+    } catch {
+      console.error(`Git hash not found in repository: ${checkpoint.gitHash.slice(0, 8)}`)
       process.exitCode = 1
       return
     }
 
     console.log(`Restoring to checkpoint ${checkpoint.id} (git hash: ${checkpoint.gitHash.slice(0, 8)})`)
-    const { execFileSync } = await import('node:child_process')
     try {
       execFileSync('git', ['checkout', checkpoint.gitHash], {
         cwd,

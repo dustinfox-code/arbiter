@@ -23,7 +23,12 @@ export async function evaluateCritic(
     ? cfg.personas as string[]
     : config.critic.personas
 
-  const files = (cfg.files as string[] | 'git-diff' | 'all') ?? 'git-diff'
+  const files: string[] | 'git-diff' | 'all' =
+    cfg.files === 'git-diff' || cfg.files === 'all'
+      ? cfg.files
+      : Array.isArray(cfg.files) && cfg.files.every((f: unknown) => typeof f === 'string')
+        ? cfg.files as string[]
+        : 'git-diff'
 
   const timeout = typeof cfg.timeout === 'number'
     ? cfg.timeout

@@ -65,6 +65,7 @@ export async function resolveContextFiles(
         cwd: resolvedCwd,
         encoding: 'utf-8',
         timeout: 5000,
+        maxBuffer: 10 * 1024 * 1024,
         stdio: ['pipe', 'pipe', 'pipe'],
       }).trim()
       const paths = output.split('\n').filter(Boolean)
@@ -87,6 +88,8 @@ export async function resolveContextFiles(
 
   if (Array.isArray(files)) {
     const results: { path: string; content: string }[] = []
+    // Resolve cwd symlinks once outside the loop
+    const realCwd = await realpath(cwd).catch(() => cwd)
     for (const raw of files) {
       if (typeof raw !== 'string') {
         results.push({ path: String(raw), content: '[Skipped: non-string path]' })
@@ -102,7 +105,6 @@ export async function resolveContextFiles(
         // File doesn't exist or can't resolve — containment check on original
         realResolvedPath = resolvedPath
       }
-      const realCwd = await realpath(cwd).catch(() => cwd)
       if (!isPathContained(realCwd, realResolvedPath)) {
         results.push({ path: filePath, content: `[Skipped: path escapes project directory]` })
         continue
