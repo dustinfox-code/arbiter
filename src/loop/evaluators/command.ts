@@ -9,19 +9,18 @@ export async function evaluateCommand(
   criteria: CompletionCriteria,
   cwd: string,
 ): Promise<CriteriaResult> {
-  const start = Date.now()
-  const command = criteria.config.command as string
-
-  if (!command) {
-    return {
-      criteriaId: criteria.id,
-      passed: false,
-      required: criteria.required,
-      description: criteria.description,
-      feedback: 'command criterion is missing "command" in config',
-      durationMs: Date.now() - start,
-    }
+  if (criteria.config.command === undefined || criteria.config.command === null) {
+    throw new Error("command criteria requires a 'command' config field (string)")
   }
+  if (typeof criteria.config.command !== 'string') {
+    throw new Error(`command criteria 'command' must be a string, got ${typeof criteria.config.command}`)
+  }
+  if (criteria.config.command === '') {
+    throw new Error("command criteria 'command' must be a non-empty string")
+  }
+
+  const start = Date.now()
+  const command = criteria.config.command
 
   return new Promise<CriteriaResult>((resolve) => {
     execFile('sh', ['-c', command], { cwd, timeout: 60000 }, (error, stdout, stderr) => {

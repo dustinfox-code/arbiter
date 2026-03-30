@@ -10,19 +10,18 @@ export async function evaluateFileExists(
   criteria: CompletionCriteria,
   cwd: string,
 ): Promise<CriteriaResult> {
-  const start = Date.now()
-  const filePath = criteria.config.path as string
-
-  if (!filePath) {
-    return {
-      criteriaId: criteria.id,
-      passed: false,
-      required: criteria.required,
-      description: criteria.description,
-      feedback: 'file-exists criterion is missing "path" in config',
-      durationMs: Date.now() - start,
-    }
+  if (criteria.config.path === undefined || criteria.config.path === null) {
+    throw new Error("file-exists criteria requires a 'path' config field (string)")
   }
+  if (typeof criteria.config.path !== 'string') {
+    throw new Error(`file-exists criteria 'path' must be a string, got ${typeof criteria.config.path}`)
+  }
+  if (criteria.config.path === '') {
+    throw new Error("file-exists criteria 'path' must be a non-empty string")
+  }
+
+  const start = Date.now()
+  const filePath = criteria.config.path
 
   const resolvedPath = resolve(cwd, filePath)
   const resolvedCwd = resolve(cwd)

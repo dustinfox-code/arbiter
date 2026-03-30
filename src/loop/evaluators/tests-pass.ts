@@ -61,6 +61,13 @@ export async function evaluateTestsPass(
   criteria: CompletionCriteria,
   cwd: string,
 ): Promise<CriteriaResult> {
+  if (criteria.config.command !== undefined && criteria.config.command !== null && typeof criteria.config.command !== 'string') {
+    throw new Error(`tests-pass criteria 'command' must be a string if provided, got ${typeof criteria.config.command}`)
+  }
+  if (typeof criteria.config.command === 'string' && criteria.config.command === '') {
+    throw new Error("tests-pass criteria 'command' must be a non-empty string if provided")
+  }
+
   const start = Date.now()
   const command = (criteria.config.command as string) || 'npm test'
 
