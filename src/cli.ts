@@ -187,7 +187,7 @@ async function handleTaskStart(cwd: string, args: ParsedArgs): Promise<void> {
     : typeof maxIterationsStr === 'string'
       ? NaN
       : DEFAULT_CONFIG.maxIterations
-  if (isNaN(maxIterationsRaw) || maxIterationsRaw < 1 || !Number.isInteger(maxIterationsRaw)) {
+  if (isNaN(maxIterationsRaw) || maxIterationsRaw < 1 || maxIterationsRaw > 100 || !Number.isInteger(maxIterationsRaw)) {
     console.error('--max-iterations must be a positive integer')
     process.exitCode = 1
     return
@@ -280,7 +280,7 @@ async function handleCheckpoints(cwd: string, args: ParsedArgs): Promise<void> {
     }
 
     // Validate git hash format to prevent command injection
-    if (!/^[a-f0-9]{7,40}$/.test(checkpoint.gitHash)) {
+    if (!/^[a-f0-9]{40}$/.test(checkpoint.gitHash)) {
       console.error(`Invalid git hash format: ${checkpoint.gitHash}`)
       process.exitCode = 1
       return

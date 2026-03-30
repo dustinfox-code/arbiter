@@ -28,15 +28,21 @@ export function isPathContained(base: string, target: string): boolean {
  * Recursively collect all source file paths under a directory,
  * skipping ignored directories and binary/non-text extensions.
  */
-async function collectAllFiles(dir: string, base: string): Promise<string[]> {
+async function collectAllFiles(dir: string, base: string, depth = 0): Promise<string[]> {
+  if (depth > 20) return [] // Prevent infinite recursion from circular symlinks
   const results: string[] = []
-  const entries = await readdir(dir, { withFileTypes: true })
+  let entries
+  try {
+    entries = await readdir(dir, { withFileTypes: true })
+  } catch {
+    return results // Permission denied or other filesystem error — skip
+  }
   for (const entry of entries) {
     if (entry.name.startsWith('.') && entry.name !== '.') continue
     const fullPath = join(dir, entry.name)
     if (entry.isDirectory()) {
       if (IGNORED_DIRS.has(entry.name)) continue
-      results.push(...await collectAllFiles(fullPath, base))
+      results.push(...await collectAllFiles(fullPath, base, depth + 1))
     } else if (entry.isFile()) {
       const ext = entry.name.includes('.') ? '.' + entry.name.split('.').pop()!.toLowerCase() : ''
       if (IGNORED_EXTENSIONS.has(ext)) continue
