@@ -1,0 +1,14 @@
+## Arbiter
+
+This project uses Arbiter to enforce task completion before stopping.
+
+When you finish a task, Arbiter's stop hook evaluates whether all
+required criteria are met. If they aren't, you'll receive a structured
+feedback message explaining what's still failing. Address the failures
+and complete the work — do not try to stop until Arbiter allows it.
+
+If you believe a criterion is incorrectly failing due to an environment
+issue (not a code issue), say so explicitly in your response before
+stopping so the developer can investigate.
+
+Current task status: run `arbiter task status` to check.
