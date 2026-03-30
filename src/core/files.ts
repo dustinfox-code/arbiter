@@ -108,6 +108,7 @@ export async function resolveContextFiles(
         continue
       }
       try {
+        // Single try-catch around both stat and read to handle TOCTOU race
         const info = await stat(resolvedPath)
         if (info.size > MAX_FILE_BYTES) {
           results.push({ path: filePath, content: `[Skipped: file too large (${Math.round(info.size / 1024)}KB, limit ${Math.round(MAX_FILE_BYTES / 1024)}KB)]` })
@@ -116,6 +117,7 @@ export async function resolveContextFiles(
         const content = await readFile(resolvedPath, 'utf-8')
         results.push({ path: filePath, content })
       } catch {
+        // Handles both stat failure (deleted between checks) and read failure
         results.push({ path: filePath, content: `[File not readable: ${filePath}]` })
       }
     }

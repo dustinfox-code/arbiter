@@ -19,7 +19,7 @@ export async function evaluateCritic(
   const start = Date.now()
   const cfg = criteria.config ?? {}
 
-  const personaIds = Array.isArray(cfg.personas)
+  const personaIds = Array.isArray(cfg.personas) && cfg.personas.every((p: unknown) => typeof p === 'string')
     ? cfg.personas as string[]
     : config.critic.personas
 
