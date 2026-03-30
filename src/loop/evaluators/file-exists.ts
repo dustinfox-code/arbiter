@@ -1,5 +1,5 @@
 import { access } from 'node:fs/promises'
-import { join } from 'node:path'
+import { resolve, sep } from 'node:path'
 import type { CompletionCriteria, CriteriaResult } from '../../core/types.js'
 
 /**
@@ -24,7 +24,18 @@ export async function evaluateFileExists(
     }
   }
 
-  const resolvedPath = join(cwd, filePath)
+  const resolvedPath = resolve(cwd, filePath)
+  const resolvedCwd = resolve(cwd)
+  if (!resolvedPath.startsWith(resolvedCwd + sep) && resolvedPath !== resolvedCwd) {
+    return {
+      criteriaId: criteria.id,
+      passed: false,
+      required: criteria.required,
+      description: criteria.description,
+      feedback: `Path escapes project directory: ${filePath}`,
+      durationMs: Date.now() - start,
+    }
+  }
 
   try {
     await access(resolvedPath)

@@ -1,8 +1,16 @@
 import { readFile, writeFile, readdir, mkdir, unlink } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { execSync } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
 import type { Checkpoint, CriteriaResult } from './types.js'
+
+/** Validate that a path does not escape the base directory via traversal. */
+function assertPathContained(base: string, target: string): void {
+  const resolvedBase = resolve(base)
+  const resolvedTarget = resolve(target)
+  if (!resolvedTarget.startsWith(resolvedBase + sep) && resolvedTarget !== resolvedBase) {
+    throw new Error(`Path escapes base directory: ${target}`)
+  }
+}
 
 export class CheckpointManager {
   private cwd: string
@@ -87,6 +95,7 @@ export class CheckpointManager {
   async getById(id: string): Promise<Checkpoint | null> {
     try {
       const filePath = join(this.checkpointDir, `${id}.json`)
+      assertPathContained(this.checkpointDir, filePath)
       const raw = await readFile(filePath, 'utf-8')
       return JSON.parse(raw) as Checkpoint
     } catch (err: unknown) {

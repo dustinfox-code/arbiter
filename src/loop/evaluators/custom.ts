@@ -1,4 +1,4 @@
-import { join } from 'node:path'
+import { resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { CompletionCriteria, CriteriaResult, ClaudeStopPayload } from '../../core/types.js'
 
@@ -31,7 +31,19 @@ export async function evaluateCustom(
   }
 
   try {
-    const resolvedPath = join(cwd, modulePath)
+    const resolvedPath = resolve(cwd, modulePath)
+    const resolvedCwd = resolve(cwd)
+    if (!resolvedPath.startsWith(resolvedCwd + sep) && resolvedPath !== resolvedCwd) {
+      return {
+        criteriaId: criteria.id,
+        passed: false,
+        required: criteria.required,
+        description: criteria.description,
+        feedback: `Custom evaluator path escapes project directory: ${modulePath}`,
+        durationMs: Date.now() - start,
+      }
+    }
+
     const moduleUrl = pathToFileURL(resolvedPath).href
     const mod = await import(moduleUrl)
 
@@ -47,12 +59,13 @@ export async function evaluateCustom(
       }
     }
 
+    let timer: ReturnType<typeof setTimeout>
     const result = await Promise.race([
       evaluate(criteria, payload, cwd),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Custom evaluator timed out after 30s')), CUSTOM_TIMEOUT_MS),
-      ),
-    ])
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Custom evaluator timed out after 30s')), CUSTOM_TIMEOUT_MS)
+      }),
+    ]).finally(() => clearTimeout(timer!))
 
     return {
       criteriaId: criteria.id,
