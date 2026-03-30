@@ -9,6 +9,13 @@ export async function evaluateNoTsErrors(
   criteria: CompletionCriteria,
   cwd: string,
 ): Promise<CriteriaResult> {
+  if (criteria.config.tsconfigPath !== undefined && criteria.config.tsconfigPath !== null && typeof criteria.config.tsconfigPath !== 'string') {
+    throw new Error(`no-ts-errors criteria 'tsconfigPath' must be a string if provided, got ${typeof criteria.config.tsconfigPath}`)
+  }
+  if (typeof criteria.config.tsconfigPath === 'string' && criteria.config.tsconfigPath === '') {
+    throw new Error("no-ts-errors criteria 'tsconfigPath' must be a non-empty string if provided")
+  }
+
   const start = Date.now()
   const tsconfigPath = criteria.config.tsconfigPath as string | undefined
   const args = ['--noEmit']

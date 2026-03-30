@@ -73,21 +73,31 @@ export async function evaluateLlm(
   cwd: string,
   llmModel: string,
 ): Promise<CriteriaResult> {
-  const start = Date.now()
-  const prompt = criteria.config.prompt as string
-  const files = criteria.config.files
-  const timeout = (criteria.config.timeout as number) ?? 30000
-
-  if (!prompt) {
-    return {
-      criteriaId: criteria.id,
-      passed: false,
-      required: criteria.required,
-      description: criteria.description,
-      feedback: 'llm criterion is missing "prompt" in config',
-      durationMs: Date.now() - start,
+  if (criteria.config.prompt === undefined || criteria.config.prompt === null) {
+    throw new Error("llm criteria requires a 'prompt' config field (string)")
+  }
+  if (typeof criteria.config.prompt !== 'string') {
+    throw new Error(`llm criteria 'prompt' must be a string, got ${typeof criteria.config.prompt}`)
+  }
+  if (criteria.config.prompt === '') {
+    throw new Error("llm criteria 'prompt' must be a non-empty string")
+  }
+  if (criteria.config.files !== undefined && criteria.config.files !== null) {
+    if (criteria.config.files !== 'git-diff' && !Array.isArray(criteria.config.files)) {
+      throw new Error("llm criteria 'files' must be a string[] or \"git-diff\" if provided")
     }
   }
+  if (criteria.config.model !== undefined && criteria.config.model !== null && typeof criteria.config.model !== 'string') {
+    throw new Error(`llm criteria 'model' must be a string if provided, got ${typeof criteria.config.model}`)
+  }
+  if (criteria.config.timeout !== undefined && criteria.config.timeout !== null && typeof criteria.config.timeout !== 'number') {
+    throw new Error(`llm criteria 'timeout' must be a number if provided, got ${typeof criteria.config.timeout}`)
+  }
+
+  const start = Date.now()
+  const prompt = criteria.config.prompt
+  const files = criteria.config.files
+  const timeout = (criteria.config.timeout as number) ?? 30000
 
   if (!process.env.ANTHROPIC_API_KEY) {
     return {

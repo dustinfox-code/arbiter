@@ -16,19 +16,18 @@ export async function evaluateCustom(
   cwd: string,
   payload?: ClaudeStopPayload,
 ): Promise<CriteriaResult> {
-  const start = Date.now()
-  const modulePath = criteria.config.path as string
-
-  if (!modulePath) {
-    return {
-      criteriaId: criteria.id,
-      passed: false,
-      required: criteria.required,
-      description: criteria.description,
-      feedback: 'custom criterion is missing "path" in config',
-      durationMs: Date.now() - start,
-    }
+  if (criteria.config.path === undefined || criteria.config.path === null) {
+    throw new Error("custom criteria requires a 'path' config field (string)")
   }
+  if (typeof criteria.config.path !== 'string') {
+    throw new Error(`custom criteria 'path' must be a string, got ${typeof criteria.config.path}`)
+  }
+  if (criteria.config.path === '') {
+    throw new Error("custom criteria 'path' must be a non-empty string")
+  }
+
+  const start = Date.now()
+  const modulePath = criteria.config.path
 
   try {
     const resolvedPath = resolve(cwd, modulePath)
