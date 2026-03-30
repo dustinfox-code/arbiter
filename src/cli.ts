@@ -313,11 +313,16 @@ async function handleReview(cwd: string, args: ParsedArgs): Promise<void> {
     ? args.flags.personas.split(',').map(s => s.trim()).filter(Boolean)
     : config.critic.personas
 
-  // Determine files: --files flag or default to git-diff
-  let files: string[] | 'git-diff' = 'git-diff'
-  if (typeof args.flags.files === 'string') {
+  // Determine files: --all flag reviews everything, --files overrides,
+  // default is git-diff (files changed in working tree vs HEAD)
+  let files: string[] | 'git-diff' | 'all' = 'git-diff'
+  if (args.flags.all) {
+    files = 'all'
+  } else if (typeof args.flags.files === 'string') {
     if (args.flags.files === 'git-diff') {
       files = 'git-diff'
+    } else if (args.flags.files === 'all') {
+      files = 'all'
     } else {
       files = args.flags.files.split(',').map(s => s.trim()).filter(Boolean)
     }
@@ -452,7 +457,8 @@ Flags:
   --max-iterations <n>          Max loop iterations (default: 5)
   --force                       Force task start, replacing existing task
   --personas <list>             Comma-separated personas for review
-  --files <list|git-diff>       Files to review (default: git-diff)`)
+  --files <list|git-diff|all>   Files to review (default: git-diff)
+  --all                         Review all project files (shorthand for --files all)`)
       if (command) {
         process.exitCode = 1
       }

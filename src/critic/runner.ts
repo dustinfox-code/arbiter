@@ -11,7 +11,7 @@ const MAX_TOTAL_CHARS = 100_000
 export interface CriticRunOptions {
   cwd: string
   taskDescription: string
-  files: string[] | 'git-diff'
+  files: string[] | 'git-diff' | 'all'
   personaIds: string[]
   customPersonas: CustomPersonaConfig[]
   llmModel: string
