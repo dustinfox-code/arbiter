@@ -12,6 +12,7 @@
     }
   },
   "bin": {
+    "arbiter": "./dist/cli.js",
     "arbiter-cc": "./dist/cli.js"
   },
   "scripts": {

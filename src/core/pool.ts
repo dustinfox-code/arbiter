@@ -11,6 +11,7 @@ export async function pooled<T>(
 
   async function worker(): Promise<void> {
     while (nextIndex < tasks.length) {
+      // Safe: JS is single-threaded, so nextIndex++ completes atomically before the await below
       const i = nextIndex++
       results[i] = await tasks[i]()
     }
