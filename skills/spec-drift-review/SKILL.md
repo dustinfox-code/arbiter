@@ -10,7 +10,7 @@ Measure the code against what was asked, requirement by requirement. The task de
 ## Scope
 
 1. **Task description.** Take it from the arguments, from the user's request in this conversation, or from the `description` field of `.arbiter/task.json` when that file exists. With none of those, say so in the report and review against the code's own stated intent: names, docstrings, commit messages.
-2. **Files.** Those named in the arguments. Otherwise the files changed against HEAD (`git diff --name-only HEAD`); when that list is empty, the last commit (`git diff --name-only HEAD~1 HEAD`). Read every file in scope in full: a diff hunk alone hides the contract around it.
+2. **Files.** Those named in the arguments. When the argument is a git ref instead (a branch, tag or commit), the files changed since it (`git diff --name-only <ref>...HEAD`). Otherwise the files changed against HEAD (`git diff --name-only HEAD`); when that list is empty, the last commit (`git diff --name-only HEAD~1 HEAD`). Read every file in scope in full: a diff hunk alone hides the contract around it.
 3. Done when you can write one line stating the task and listing the files it is measured against. That line opens the report.
 
 ## Review

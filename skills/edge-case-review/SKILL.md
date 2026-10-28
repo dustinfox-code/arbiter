@@ -9,7 +9,7 @@ Find the inputs and states that make this code fail at runtime. Seven categories
 
 ## Scope
 
-1. **Files.** Those named in the arguments. Otherwise the files changed against HEAD (`git diff --name-only HEAD`); when that list is empty, the last commit (`git diff --name-only HEAD~1 HEAD`). Read every file in scope in full, and follow each changed function to its callers when a guard could live on either side.
+1. **Files.** Those named in the arguments. When the argument is a git ref instead (a branch, tag or commit), the files changed since it (`git diff --name-only <ref>...HEAD`). Otherwise the files changed against HEAD (`git diff --name-only HEAD`); when that list is empty, the last commit (`git diff --name-only HEAD~1 HEAD`). Read every file in scope in full, and follow each changed function to its callers when a guard could live on either side.
 2. **Task description.** From the arguments, the conversation, or the `description` field of `.arbiter/task.json` when present. It tells you which inputs are realistic; without it, review against the code's own types and contracts and say so.
 3. Done when you can open the report with one line naming the files in scope.
 

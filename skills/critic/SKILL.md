@@ -16,7 +16,7 @@ The personas, each its own skill:
 
 ## Scope
 
-1. **Files.** Those named in the arguments. Otherwise the files changed against HEAD (`git diff --name-only HEAD`); when that list is empty, the last commit (`git diff --name-only HEAD~1 HEAD`). Resolve this once, here, so every persona reviews the same list.
+1. **Files.** Those named in the arguments. When the argument is a git ref instead (a branch, tag or commit), the files changed since it (`git diff --name-only <ref>...HEAD`). Otherwise the files changed against HEAD (`git diff --name-only HEAD`); when that list is empty, the last commit (`git diff --name-only HEAD~1 HEAD`). Resolve this once, here, so every persona reviews the same list.
 2. **Task description.** From the arguments, the conversation, or the `description` field of `.arbiter/task.json` when present. Without one, pass "no task description; review for general correctness" so each persona says so.
 3. **Personas.** All five, unless `personas=` names a subset.
 4. Done when you have one scope line: the task, the file list, and the persona list. It opens the report.

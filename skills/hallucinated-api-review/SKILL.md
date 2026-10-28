@@ -9,7 +9,7 @@ Every name the code reaches for has to exist. Verify by reading the source of tr
 
 ## Scope
 
-1. **Files.** Those named in the arguments. Otherwise the files changed against HEAD (`git diff --name-only HEAD`); when that list is empty, the last commit (`git diff --name-only HEAD~1 HEAD`). Read every file in scope in full.
+1. **Files.** Those named in the arguments. When the argument is a git ref instead (a branch, tag or commit), the files changed since it (`git diff --name-only <ref>...HEAD`). Otherwise the files changed against HEAD (`git diff --name-only HEAD`); when that list is empty, the last commit (`git diff --name-only HEAD~1 HEAD`). Read every file in scope in full.
 2. **Manifests.** Read the dependency manifest and lockfile for the project's language (`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, or equivalent). They are the list of what is allowed to be imported.
 3. **Declarations.** For each imported package that is installed, locate its type declarations or source (`node_modules/<pkg>/package.json` → `types`, the `.d.ts` files, `site-packages`, and so on). They are the list of what each package exports.
 4. Done when you can open the report with one line naming the files in scope and the manifest you checked against.

@@ -9,7 +9,7 @@ Look for a vulnerability with a real attack vector: who controls the input, wher
 
 ## Scope
 
-1. **Files.** Those named in the arguments. Otherwise the files changed against HEAD (`git diff --name-only HEAD`); when that list is empty, the last commit (`git diff --name-only HEAD~1 HEAD`). Read every file in scope in full, and trace each untrusted input from where it enters to where it is used.
+1. **Files.** Those named in the arguments. When the argument is a git ref instead (a branch, tag or commit), the files changed since it (`git diff --name-only <ref>...HEAD`). Otherwise the files changed against HEAD (`git diff --name-only HEAD`); when that list is empty, the last commit (`git diff --name-only HEAD~1 HEAD`). Read every file in scope in full, and trace each untrusted input from where it enters to where it is used.
 2. **Task description.** From the arguments, the conversation, or the `description` field of `.arbiter/task.json` when present. It tells you who the callers are and what is trusted. Without it, treat every external input as attacker-controlled and say so.
 3. Done when you can open the report with one line naming the files in scope and the trust boundary you assumed.
 

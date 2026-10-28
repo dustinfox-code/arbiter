@@ -9,7 +9,7 @@ A test earns its place by failing when the implementation is wrong. For every te
 
 ## Scope
 
-1. **Files.** Test files named in the arguments. Otherwise the test files changed against HEAD (`git diff --name-only HEAD`); when that list is empty, the last commit (`git diff --name-only HEAD~1 HEAD`). For each test file, also read the unit it tests.
+1. **Files.** Test files named in the arguments. When the argument is a git ref instead (a branch, tag or commit), the test files changed since it (`git diff --name-only <ref>...HEAD`). Otherwise the test files changed against HEAD (`git diff --name-only HEAD`); when that list is empty, the last commit (`git diff --name-only HEAD~1 HEAD`). For each test file, also read the unit it tests.
 2. **Task description.** From the arguments, the conversation, or the `description` field of `.arbiter/task.json` when present. It is the list of requirements the tests have to cover. Without it, derive the requirements from the unit's public interface and say so.
 3. Done when you can open the report with one line naming the test files, the units under test, and the requirement source.
 
