@@ -108,6 +108,7 @@ export interface LastStopRecord {
   promptId?: string
   at: string               // ISO 8601
   stopHookActive?: boolean
+  lastMessageHash?: string // sha1 of last_assistant_message, when the agent sends one
   result: HookResult
 }
 

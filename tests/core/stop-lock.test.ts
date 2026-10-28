@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, rm, writeFile, utimes, access } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { acquireStopLock, matchesLastStop } from '../../src/core/stop-lock.js'
+import { acquireStopLock, matchesLastStop, hashMessage } from '../../src/core/stop-lock.js'
 import type { LastStopRecord } from '../../src/core/types.js'
 
 describe('acquireStopLock', () => {
@@ -64,8 +64,8 @@ describe('matchesLastStop', () => {
     result: { decision: 'loop', iteration: 1, passedCriteria: [], failedCriteria: [], summary: '' },
   }
 
-  it('matches same session and prompt', () => {
-    expect(matchesLastStop(base, { session_id: 's1', prompt_id: 'p1' }, 1_000_000 + 60_000, 5000)).toBe(true)
+  it('matches same session and prompt inside the window', () => {
+    expect(matchesLastStop(base, { session_id: 's1', prompt_id: 'p1' }, 1_000_000 + 4_000, 5000)).toBe(true)
   })
 
   it('rejects a different prompt in the same session even inside the window', () => {
@@ -81,6 +81,24 @@ describe('matchesLastStop', () => {
     expect(matchesLastStop(noPrompt, { session_id: 's1' }, 1_000_000 + 4_000, 5000)).toBe(true)
     expect(matchesLastStop(noPrompt, { session_id: 's1' }, 1_000_000 + 6_000, 5000)).toBe(false)
     expect(matchesLastStop(base, { session_id: 's1' }, 1_000_000 + 4_000, 5000)).toBe(true)
+  })
+
+  it('rejects a stop whose stop_hook_active differs from the record', () => {
+    const rec = { ...base, stopHookActive: false }
+    expect(matchesLastStop(rec, { session_id: 's1', prompt_id: 'p1', stop_hook_active: false }, 1_000_000 + 10, 5000)).toBe(true)
+    expect(matchesLastStop(rec, { session_id: 's1', prompt_id: 'p1', stop_hook_active: true }, 1_000_000 + 10, 5000)).toBe(false)
+  })
+
+  it('rejects a stop whose assistant message differs from the record', () => {
+    const rec = { ...base, lastMessageHash: hashMessage('a') }
+    expect(matchesLastStop(rec, { session_id: 's1', prompt_id: 'p1', last_assistant_message: 'a' }, 1_000_000 + 10, 5000)).toBe(true)
+    expect(matchesLastStop(rec, { session_id: 's1', prompt_id: 'p1', last_assistant_message: 'b' }, 1_000_000 + 10, 5000)).toBe(false)
+    // Absent on either side: not a discriminator
+    expect(matchesLastStop(rec, { session_id: 's1', prompt_id: 'p1' }, 1_000_000 + 10, 5000)).toBe(true)
+  })
+
+  it('always requires the record to be inside the window, even with matching ids', () => {
+    expect(matchesLastStop(base, { session_id: 's1', prompt_id: 'p1' }, 1_000_000 + 60_000, 5000)).toBe(false)
   })
 
   it('never matches without a record or without a session id', () => {

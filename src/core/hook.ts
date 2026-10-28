@@ -3,13 +3,13 @@ import { loadConfig } from './config.js'
 import { TaskContextManager } from './task-manager.js'
 import { CheckpointManager } from './checkpoint-manager.js'
 import { CriteriaEvaluator } from '../loop/evaluator.js'
-import { acquireStopLock, matchesLastStop } from './stop-lock.js'
-import { emitForAgent, type AgentId } from './agents.js'
+import { acquireStopLock, matchesLastStop, hashMessage } from './stop-lock.js'
+import { emitForAgent, normalizeStopPayload, type AgentId } from './agents.js'
 
 /** How long a second `check` process waits for the first to finish before failing open. */
 const DEFAULT_LOCK_TIMEOUT_MS = 110_000
-/** Replay window for payloads that carry a session_id but no prompt_id. */
-const DEFAULT_REPLAY_WINDOW_MS = 5_000
+/** A replay is only for parallel hooks answering one stop, which finish within milliseconds of each other. */
+const DEFAULT_REPLAY_WINDOW_MS = 10_000
 
 export interface HookRunOptions {
   cwd?: string
@@ -117,7 +117,9 @@ export class HookInterface {
     let payload: StopPayload | null = null
     if (stdinData.trim()) {
       try {
-        payload = JSON.parse(stdinData) as StopPayload
+        const raw = JSON.parse(stdinData) as unknown
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('payload is not an object')
+        payload = normalizeStopPayload(raw as Record<string, unknown>)
       } catch {
         process.stderr.write('Arbiter: Failed to parse stop hook payload from stdin\n')
         return {
@@ -265,6 +267,7 @@ export class HookInterface {
           promptId: typeof payload.prompt_id === 'string' ? payload.prompt_id : undefined,
           at: new Date().toISOString(),
           stopHookActive,
+          lastMessageHash: hashMessage(payload.last_assistant_message),
           result,
         }
         await taskManager.update({ metadata: { ...current.metadata, lastStop: record } })

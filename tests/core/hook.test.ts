@@ -205,6 +205,27 @@ describe('HookInterface', () => {
       expect(third.iteration).toBe(2)
     })
 
+    it('a later stop in the same turn (stop_hook_active flips) is evaluated, not replayed', async () => {
+      await writeTask(makeTask({ criteria: failingCriteria }))
+      const first = await hook.run({ stdinData: payloadFor({ prompt_id: 'p1', stop_hook_active: false }) })
+      expect(first.iteration).toBe(1)
+      // Agent was blocked, did work, stops again: same session, same prompt, flag now true
+      const second = await hook.run({ stdinData: payloadFor({ prompt_id: 'p1', stop_hook_active: true }) })
+      expect(second.replayed).toBeUndefined()
+      expect(second.iteration).toBe(2)
+    })
+
+    it('a later stop with a different assistant message is evaluated, not replayed', async () => {
+      await writeTask(makeTask({ criteria: failingCriteria }))
+      await hook.run({ stdinData: payloadFor({ prompt_id: 'p1', stop_hook_active: true, last_assistant_message: 'tried once' }) })
+      const next = await hook.run({ stdinData: payloadFor({ prompt_id: 'p1', stop_hook_active: true, last_assistant_message: 'tried twice' }) })
+      expect(next.replayed).toBeUndefined()
+      expect(next.iteration).toBe(2)
+      const same = await hook.run({ stdinData: payloadFor({ prompt_id: 'p1', stop_hook_active: true, last_assistant_message: 'tried twice' }) })
+      expect(same.replayed).toBe(true)
+      expect(same.iteration).toBe(2)
+    })
+
     it('falls back to a time window when prompt_id is absent', async () => {
       await writeTask(makeTask({ criteria: failingCriteria }))
 

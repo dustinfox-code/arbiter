@@ -1,5 +1,6 @@
 import { open, unlink, stat, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { createHash } from 'node:crypto'
 import type { LastStopRecord, StopPayload } from './types.js'
 
 const POLL_MS = 100
@@ -69,13 +70,17 @@ export async function acquireStopLock(lockPath: string, timeoutMs: number): Prom
 }
 
 /**
- * Decide whether an incoming stop payload is the same stop event that
- * `last` already answered.
+ * Decide whether an incoming stop payload is the same stop *event* that
+ * `last` already answered, as opposed to a later stop in the same turn.
  *
- * Same session and same prompt_id is a definite match. When the agent sends
- * no prompt_id, fall back to "same session within `windowMs`", which is wide
- * enough to catch parallel hooks for one stop and narrow enough that the next
- * genuine stop (after the agent has done more work) is evaluated afresh.
+ * One user turn produces several stop events once a hook starts blocking:
+ * stop, blocked, work, stop again. Those share session_id and prompt_id,
+ * so neither can be the whole key. What tells stop events apart within a
+ * turn: `stop_hook_active` flips from false to true after the first block,
+ * the assistant's last message changes once it has done more work, and
+ * real stops are seconds apart while parallel hooks for one stop finish
+ * within milliseconds of each other. So every discriminator the agent
+ * sends must agree, and the record must be recent.
  */
 export function matchesLastStop(
   last: LastStopRecord | undefined,
@@ -87,11 +92,21 @@ export function matchesLastStop(
   if (last.sessionId !== payload.session_id) return false
 
   const incomingPrompt = typeof payload.prompt_id === 'string' ? payload.prompt_id : undefined
-  if (incomingPrompt && last.promptId) {
-    return incomingPrompt === last.promptId
-  }
+  if (incomingPrompt && last.promptId && incomingPrompt !== last.promptId) return false
+
+  if (typeof payload.stop_hook_active === 'boolean' && typeof last.stopHookActive === 'boolean'
+    && payload.stop_hook_active !== last.stopHookActive) return false
+
+  const incomingHash = hashMessage(payload.last_assistant_message)
+  if (incomingHash && last.lastMessageHash && incomingHash !== last.lastMessageHash) return false
 
   const lastAt = Date.parse(last.at)
   if (Number.isNaN(lastAt)) return false
   return now - lastAt <= windowMs
+}
+
+/** Stable short hash of the assistant's last message; undefined when absent. */
+export function hashMessage(message: unknown): string | undefined {
+  if (typeof message !== 'string' || !message) return undefined
+  return createHash('sha1').update(message).digest('hex')
 }
