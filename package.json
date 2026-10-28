@@ -21,7 +21,8 @@
     "test:watch": "vitest",
     "prepublishOnly": "npm run build",
     "version": "node scripts/sync-plugin-version.mjs",
-    "check:version": "node scripts/sync-plugin-version.mjs --check"
+    "check:version": "node scripts/sync-plugin-version.mjs --check",
+    "package:skills": "node scripts/package-skills.mjs"
   },
   "engines": {
     "node": ">=18"
