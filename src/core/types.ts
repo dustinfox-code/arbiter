@@ -123,7 +123,7 @@ export interface ArbiterConfig {
   maxIterations: number           // Default: 5
   checkpointDir: string           // Default: .arbiter/checkpoints
   taskFile: string                // Default: .arbiter/task.json
-  llmModel: string                // Default: claude-sonnet-4-20250514
+  llmModel: string                // Default: claude-sonnet-5-5
   critic: {
     enabled: boolean              // Default: false (Phase 2)
     personas: string[]            // Default: ["spec-drift-review", "edge-case-review", "ai-code-security-review"]
@@ -136,7 +136,7 @@ export const DEFAULT_CONFIG: ArbiterConfig = {
   maxIterations: 5,
   checkpointDir: '.arbiter/checkpoints',
   taskFile: '.arbiter/task.json',
-  llmModel: 'claude-sonnet-4-20250514',
+  llmModel: 'claude-sonnet-5-5',
   critic: {
     enabled: false,
     personas: ['spec-drift-review', 'edge-case-review', 'ai-code-security-review'],
