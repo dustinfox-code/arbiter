@@ -33,6 +33,41 @@ async function skillDirs(): Promise<string[]> {
   return entries.filter(e => e.isDirectory()).map(e => e.name).sort()
 }
 
+describe('loop skill contract', () => {
+  it('documents a task.json example that matches the TaskContext shape the hook reads', async () => {
+    const text = await readFile(join(SKILLS_DIR, 'loop', 'SKILL.md'), 'utf-8')
+    const fence = text.match(/```json\n(\{\n  "id": "<uuid>"[\s\S]*?)\n```/)
+    expect(fence, 'task.json example fence').not.toBeNull()
+    const task = JSON.parse(fence![1]) as Record<string, unknown>
+    for (const key of ['id', 'description', 'criteria', 'status', 'iteration', 'maxIterations', 'createdAt', 'updatedAt', 'checkpoints', 'metadata']) {
+      expect(task, `task.json example has ${key}`).toHaveProperty(key)
+    }
+    expect(task.status).toBe('pending')
+    expect(task.maxIterations).toBe(5)
+    for (const c of task.criteria as Array<Record<string, unknown>>) {
+      for (const key of ['id', 'type', 'description', 'required', 'config']) {
+        expect(c, `criterion has ${key}`).toHaveProperty(key)
+      }
+    }
+  })
+
+  it('documents a checkpoint example with the fields the CLI prints', async () => {
+    const text = await readFile(join(SKILLS_DIR, 'loop', 'SKILL.md'), 'utf-8')
+    const fence = text.match(/```json\n(\{ "id": "checkpoint-[\s\S]*?)\n```/)
+    expect(fence, 'checkpoint example fence').not.toBeNull()
+    const cp = JSON.parse(fence![1]) as Record<string, unknown>
+    for (const key of ['id', 'iteration', 'timestamp', 'criteriaResults', 'passedIds', 'failedIds']) {
+      expect(cp, `checkpoint example has ${key}`).toHaveProperty(key)
+    }
+  })
+
+  it('mentions the npm package once, as a link, with nothing executable', async () => {
+    const text = await readFile(join(SKILLS_DIR, 'loop', 'SKILL.md'), 'utf-8')
+    expect(text.match(/arbiter-cc/g)?.length).toBe(1)
+    expect(text).toMatch(/https:\/\/github\.com\/dustinfox-code\/arbiter/)
+  })
+})
+
 describe('skills/ layout (Agensi + Claude Code plugin rules)', () => {
   it('every skill folder has a SKILL.md whose name matches the folder', async () => {
     for (const dir of await skillDirs()) {
