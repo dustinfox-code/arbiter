@@ -10,8 +10,9 @@ import {
 
 describe('built-in personas load from the skill files', () => {
   it('loads exactly the five review skills', () => {
-    const personas = getBuiltInPersonas()
-    expect(Object.keys(personas).sort()).toEqual([...BUILT_IN_PERSONA_IDS].sort())
+    const expected = ['ai-code-security-review', 'edge-case-review', 'hallucinated-api-review', 'spec-drift-review', 'tautological-test-review']
+    expect(Object.keys(getBuiltInPersonas()).sort()).toEqual(expected)
+    expect([...BUILT_IN_PERSONA_IDS].sort()).toEqual(expected)
   })
 
   it('each system prompt is the marked section plus the JSON contract', () => {
@@ -55,10 +56,23 @@ describe('resolvePersonas', () => {
   })
 
   it('accepts every 0.1.x alias and returns the canonical persona', () => {
-    for (const [alias, canonical] of Object.entries(PERSONA_ALIASES)) {
+    const pairs: Array<[string, string]> = [
+      ['correctness', 'spec-drift-review'],
+      ['edge-cases', 'edge-case-review'],
+      ['security', 'ai-code-security-review'],
+      ['hallucinations', 'hallucinated-api-review'],
+      ['test-quality', 'tautological-test-review'],
+    ]
+    expect(Object.keys(PERSONA_ALIASES)).toHaveLength(pairs.length)
+    for (const [alias, canonical] of pairs) {
       expect(canonicalPersonaId(alias)).toBe(canonical)
       expect(resolvePersonas([alias], [])[0].id).toBe(canonical)
     }
+  })
+
+  it('does not treat Object.prototype members as aliases', () => {
+    expect(canonicalPersonaId('constructor')).toBe('constructor')
+    expect(() => resolvePersonas(['constructor'], [])).toThrow(/Unknown critic persona/)
   })
 
   it('lets a custom persona override a built-in by canonical id or alias', () => {

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, rm, mkdir, readFile, writeFile, access } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { wireAgentHook, wireDetectedAgents, detectAgents, hookCommand } from '../../src/core/agent-config.js'
@@ -26,7 +27,7 @@ describe('wireAgentHook', () => {
     expect(stop).toHaveLength(1)
     expect(stop[0].matcher).toBe('')
     const inner = stop[0].hooks as Array<Record<string, unknown>>
-    expect(inner[0]).toEqual({ type: 'command', command: 'npx arbiter-cc check', timeout: 120 })
+    expect(inner[0]).toEqual({ type: 'command', command: hookCommand('claude'), timeout: 120 })
   })
 
   it('codex: writes a Stop entry in .codex/hooks.json with --agent codex and no matcher', async () => {
@@ -36,7 +37,7 @@ describe('wireAgentHook', () => {
     const stop = (s.hooks as Record<string, unknown>).Stop as Array<Record<string, unknown>>
     expect(stop[0]).not.toHaveProperty('matcher')
     const inner = stop[0].hooks as Array<Record<string, unknown>>
-    expect(inner[0].command).toBe('npx arbiter-cc check --agent codex')
+    expect(inner[0].command).toBe(hookCommand('codex'))
   })
 
   it('copilot: writes an agentStop entry in .github/hooks/arbiter.json using bash/timeoutSec', async () => {
@@ -45,7 +46,7 @@ describe('wireAgentHook', () => {
     const s = await json('.github/hooks/arbiter.json')
     expect(s.version).toBe(1)
     const list = (s.hooks as Record<string, unknown>).agentStop as Array<Record<string, unknown>>
-    expect(list[0]).toEqual({ type: 'command', bash: 'npx arbiter-cc check --agent copilot', timeoutSec: 120 })
+    expect(list[0]).toEqual({ type: 'command', bash: hookCommand('copilot'), timeoutSec: 120 })
   })
 
   it('cursor: writes a stop entry in .cursor/hooks.json', async () => {
@@ -54,7 +55,7 @@ describe('wireAgentHook', () => {
     const s = await json('.cursor/hooks.json')
     expect(s.version).toBe(1)
     const list = (s.hooks as Record<string, unknown>).stop as Array<Record<string, unknown>>
-    expect(list[0]).toEqual({ command: 'npx arbiter-cc check --agent cursor', timeout: 120 })
+    expect(list[0]).toEqual({ command: hookCommand('cursor'), timeout: 120 })
   })
 
   it('gemini: writes nothing and returns a snippet with decision-free AfterAgent registration', async () => {
@@ -65,7 +66,7 @@ describe('wireAgentHook', () => {
     const snippet = JSON.parse(r.snippet!) as Record<string, unknown>
     const list = (snippet.hooks as Record<string, unknown>).AfterAgent as Array<Record<string, unknown>>
     const inner = list[0].hooks as Array<Record<string, unknown>>
-    expect(inner[0].command).toBe('npx arbiter-cc check --agent gemini')
+    expect(inner[0].command).toBe(hookCommand('gemini'))
     expect(inner[0].timeout).toBe(120000)
   })
 
@@ -101,11 +102,33 @@ describe('wireAgentHook', () => {
     await expect(wireAgentHook(dir, 'codex')).rejects.toThrow(/Could not parse/)
   })
 
-  it('hookCommand keeps the bare form for claude only', () => {
-    expect(hookCommand('claude')).toBe('npx arbiter-cc check')
+  it('hookCommand pins this package version and adds --agent for everything but claude', () => {
+    const version = (JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf-8')) as { version: string }).version
+    expect(hookCommand('claude')).toBe(`npx arbiter-cc@${version} check`)
     for (const agent of AGENT_IDS.filter(a => a !== 'claude')) {
-      expect(hookCommand(agent)).toBe(`npx arbiter-cc check --agent ${agent}`)
+      expect(hookCommand(agent)).toBe(`npx arbiter-cc@${version} check --agent ${agent}`)
     }
+  })
+
+  it('refuses a config whose root is not an object or whose event entry is not an array', async () => {
+    await mkdir(join(dir, '.cursor'), { recursive: true })
+    await writeFile(join(dir, '.cursor', 'hooks.json'), '[1,2,3]')
+    await expect(wireAgentHook(dir, 'cursor')).rejects.toThrow(/not a JSON object/)
+    await mkdir(join(dir, '.claude'), { recursive: true })
+    await writeFile(join(dir, '.claude', 'settings.json'), JSON.stringify({ hooks: { Stop: { oops: true } } }))
+    await expect(wireAgentHook(dir, 'claude')).rejects.toThrow(/hooks\.Stop is not an array/)
+    // nothing was rewritten
+    expect(await readFile(join(dir, '.cursor', 'hooks.json'), 'utf-8')).toBe('[1,2,3]')
+  })
+
+  it('preserves existing Codex hooks too', async () => {
+    await mkdir(join(dir, '.codex'), { recursive: true })
+    await writeFile(join(dir, '.codex', 'hooks.json'), JSON.stringify({ description: 'mine', hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'echo pre' }] }] } }))
+    await wireAgentHook(dir, 'codex')
+    const s = await json('.codex/hooks.json')
+    expect(s.description).toBe('mine')
+    expect((s.hooks as Record<string, unknown>).PreToolUse).toHaveLength(1)
+    expect((s.hooks as Record<string, unknown>).Stop).toHaveLength(1)
   })
 })
 
@@ -125,6 +148,10 @@ describe('init --agent all', () => {
     expect(d).toEqual({ claude: true, codex: false, copilot: false, gemini: false, cursor: false })
     await mkdir(join(dir, '.github', 'hooks'))
     expect((await detectAgents(dir)).copilot).toBe(true)
+    await mkdir(join(dir, '.codex'))
+    await mkdir(join(dir, '.gemini'))
+    await mkdir(join(dir, '.cursor'))
+    expect(await detectAgents(dir)).toEqual({ claude: true, codex: true, copilot: true, gemini: true, cursor: true })
   })
 
   it('wires only the detected agents and reports the rest as skipped', async () => {

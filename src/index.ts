@@ -1,5 +1,6 @@
 // Programmatic API — usable without the CLI
-export { TaskContextManager } from './core/task-manager.js'
+export { TaskContextManager, validateTask } from './core/task-manager.js'
+export { packageVersion } from './core/version.js'
 export { CheckpointManager } from './core/checkpoint-manager.js'
 export { HookInterface, runHook } from './core/hook.js'
 export type { HookRunOptions } from './core/hook.js'

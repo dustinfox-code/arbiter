@@ -186,7 +186,7 @@ Exit codes (revised in 0.2.0; see Phase 3):
 - `0` — always. When criteria fail, stdout carries `{"decision":"block","reason":<feedback>}` and the agent re-enters with the reason as its prompt. On exit 2 the agents feed *stderr* to the model, so 0.1's stdout feedback was never seen.
 - `1` — Arbiter itself failed (parse error, unrecoverable internal error). Agents treat this as non-blocking.
 
-Feedback prompt format (written to stdout on exit 2):
+Feedback prompt format (the block decision's `reason`, on stdout, exit 0):
 - Must include: current iteration / max, which criteria passed, which failed, and the specific feedback string from each failing criterion
 - Must end with a clear instruction to Claude to fix the failing criteria and not stop until they pass
 - Should be structured (markdown is fine, Claude Code renders it)
@@ -246,7 +246,7 @@ interface ArbiterConfig {
   llmModel: string                // Default: claude-sonnet-5-5 (0.2.0)
   critic: {
     enabled: boolean              // Default: false (Phase 2)
-    personas: string[]            // Default: ["correctness", "edge-cases", "security"]
+    personas: string[]            // Default: ["spec-drift-review", "edge-case-review", "ai-code-security-review"] (0.2.0; 0.1 ids remain aliases)
     failOnWarnings: boolean       // Default: false
   }
 }

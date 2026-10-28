@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir, access } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 import { AGENT_IDS, AGENT_INFO, type AgentId } from './agents.js'
+import { packageVersion } from './version.js'
 
 /** Seconds an agent waits for `check` before killing it. Criteria like a test suite need room. */
 const HOOK_TIMEOUT_SECONDS = 120
@@ -16,9 +17,15 @@ export interface WireResult {
   snippet?: string
 }
 
-/** The command each agent's hook runs. Claude keeps the bare form the 0.1 plugin and docs use. */
+/**
+ * The command each agent's hook runs. Pinned to this exact version: the hook
+ * fires on every stop, and an unpinned `npx arbiter-cc` would fetch whatever
+ * the registry serves. `npm version` rewrites the pin in hooks/hooks.json;
+ * `init` writes the version of the CLI that ran it.
+ */
 export function hookCommand(agent: AgentId): string {
-  return agent === 'claude' ? 'npx arbiter-cc check' : `npx arbiter-cc check --agent ${agent}`
+  const base = `npx arbiter-cc@${packageVersion()} check`
+  return agent === 'claude' ? base : `${base} --agent ${agent}`
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -31,14 +38,40 @@ async function exists(path: string): Promise<boolean> {
 }
 
 async function readJson(path: string): Promise<Record<string, unknown>> {
+  let raw: string
   try {
-    const raw = await readFile(path, 'utf-8')
-    const parsed = JSON.parse(raw) as unknown
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {}
+    raw = await readFile(path, 'utf-8')
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {}
+    throw err
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch (err: unknown) {
     throw new Error(`Could not parse ${path}: ${(err as Error).message}`)
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${path} is not a JSON object; fix or remove it before running init`)
+  }
+  return parsed as Record<string, unknown>
+}
+
+/** The event's entry list, created when absent; refuses to replace a non-array someone else wrote. */
+function eventList(hooks: Record<string, unknown>, event: string, path: string): unknown[] {
+  if (hooks[event] === undefined) hooks[event] = []
+  if (!Array.isArray(hooks[event])) {
+    throw new Error(`${path}: hooks.${event} is not an array; fix it before running init`)
+  }
+  return hooks[event] as unknown[]
+}
+
+function hooksObject(file: Record<string, unknown>, path: string): Record<string, unknown> {
+  if (file.hooks === undefined) file.hooks = {}
+  if (!file.hooks || typeof file.hooks !== 'object' || Array.isArray(file.hooks)) {
+    throw new Error(`${path}: "hooks" is not an object; fix it before running init`)
+  }
+  return file.hooks as Record<string, unknown>
 }
 
 async function writeJson(path: string, value: unknown): Promise<void> {
@@ -76,10 +109,8 @@ export async function wireAgentHook(cwd: string, agent: AgentId): Promise<WireRe
       const relPath = info.configPath as string
       const path = join(cwd, relPath)
       const settings = await readJson(path)
-      const hooks = (settings.hooks && typeof settings.hooks === 'object' ? settings.hooks : {}) as Record<string, unknown>
-      settings.hooks = hooks
-      const list = Array.isArray(hooks[info.event]) ? (hooks[info.event] as unknown[]) : []
-      hooks[info.event] = list
+      const hooks = hooksObject(settings, relPath)
+      const list = eventList(hooks, info.event, relPath)
       if (hasArbiterEntry(list)) {
         return { agent, path: relPath, status: 'present', message: `${info.label}: ${info.event} hook already present in ${relPath}` }
       }
@@ -98,10 +129,8 @@ export async function wireAgentHook(cwd: string, agent: AgentId): Promise<WireRe
       const path = join(cwd, relPath)
       const file = await readJson(path)
       if (file.version === undefined) file.version = 1
-      const hooks = (file.hooks && typeof file.hooks === 'object' ? file.hooks : {}) as Record<string, unknown>
-      file.hooks = hooks
-      const list = Array.isArray(hooks[info.event]) ? (hooks[info.event] as unknown[]) : []
-      hooks[info.event] = list
+      const hooks = hooksObject(file, relPath)
+      const list = eventList(hooks, info.event, relPath)
       if (hasArbiterEntry(list)) {
         return { agent, path: relPath, status: 'present', message: `${info.label}: ${info.event} hook already present in ${relPath}` }
       }
@@ -116,10 +145,8 @@ export async function wireAgentHook(cwd: string, agent: AgentId): Promise<WireRe
       const path = join(cwd, relPath)
       const file = await readJson(path)
       if (file.version === undefined) file.version = 1
-      const hooks = (file.hooks && typeof file.hooks === 'object' ? file.hooks : {}) as Record<string, unknown>
-      file.hooks = hooks
-      const list = Array.isArray(hooks[info.event]) ? (hooks[info.event] as unknown[]) : []
-      hooks[info.event] = list
+      const hooks = hooksObject(file, relPath)
+      const list = eventList(hooks, info.event, relPath)
       if (hasArbiterEntry(list)) {
         return { agent, path: relPath, status: 'present', message: `${info.label}: ${info.event} hook already present in ${relPath}` }
       }

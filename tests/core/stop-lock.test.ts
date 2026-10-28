@@ -46,6 +46,17 @@ describe('acquireStopLock', () => {
     await held.release()
   })
 
+  it('release leaves a lock that another process now owns', async () => {
+    const path = join(dir, 'task.json.lock')
+    const mine = await acquireStopLock(path, 500)
+    // Simulate: my lock was reclaimed as stale and someone else wrote theirs
+    await rm(path)
+    await writeFile(path, JSON.stringify({ pid: 1, token: 'theirs' }))
+    await mine.release()
+    await expect(access(path)).resolves.toBeUndefined()
+    await rm(path)
+  })
+
   it('reclaims a stale lock left by a dead process', async () => {
     const path = join(dir, 'task.json.lock')
     await writeFile(path, '{"pid":99999}')

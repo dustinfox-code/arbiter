@@ -122,7 +122,7 @@ export function getBuiltInPersonas(): Record<string, PersonaDefinition> {
 
 /** Map a persona id or 0.1.x alias to its canonical id. Unknown ids pass through. */
 export function canonicalPersonaId(id: string): string {
-  return PERSONA_ALIASES[id] ?? id
+  return Object.hasOwn(PERSONA_ALIASES, id) ? PERSONA_ALIASES[id] : id
 }
 
 /**
@@ -152,7 +152,7 @@ export function resolvePersonas(
     const custom = customMap.get(id)
     if (custom) {
       resolved.push(custom)
-    } else if (builtIn[id]) {
+    } else if (Object.hasOwn(builtIn, id)) {
       resolved.push(builtIn[id])
     } else {
       missing.push(requested)

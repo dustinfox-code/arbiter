@@ -10,7 +10,7 @@
 // rewritten to match.
 //
 // Usage: node scripts/package-skills.mjs [outDir]   (default: dist/skills)
-import { readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync, writeFileSync, mkdirSync, rmSync, statSync, existsSync } from 'node:fs'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -178,20 +178,22 @@ export function buildPackages(outDir = join(ROOT, 'dist', 'skills')) {
     const slug = RENAMES[folder] ?? folder
     const srcMd = readFileSync(join(SKILLS, folder, 'SKILL.md'), 'utf-8')
     const md = rewriteReferences(slug === folder ? srcMd : setFrontmatterName(srcMd, slug))
-    const yaml = readFileSync(join(SKILLS, folder, 'agents', 'openai.yaml'), 'utf-8')
+    const yamlPath = join(SKILLS, folder, 'agents', 'openai.yaml')
+    const yaml = existsSync(yamlPath) ? readFileSync(yamlPath, 'utf-8') : ''
 
-    const entries = [
-      { name: `${slug}/SKILL.md`, data: Buffer.from(md, 'utf-8') },
-      { name: `${slug}/agents/openai.yaml`, data: Buffer.from(yaml, 'utf-8') },
-    ]
+    const entries = [{ name: `${slug}/SKILL.md`, data: Buffer.from(md, 'utf-8') }]
+    if (yaml) entries.push({ name: `${slug}/agents/openai.yaml`, data: Buffer.from(yaml, 'utf-8') })
     const zipPath = join(outDir, `${slug}.zip`)
     writeFileSync(zipPath, buildZip(entries, stamp))
 
     // Staged copy for inspection, and the listing draft for the submission form
     const staged = join(outDir, slug)
-    mkdirSync(join(staged, 'agents'), { recursive: true })
+    mkdirSync(staged, { recursive: true })
     writeFileSync(join(staged, 'SKILL.md'), md)
-    writeFileSync(join(staged, 'agents', 'openai.yaml'), yaml)
+    if (yaml) {
+      mkdirSync(join(staged, 'agents'), { recursive: true })
+      writeFileSync(join(staged, 'agents', 'openai.yaml'), yaml)
+    }
     const listingPath = join(outDir, `${slug}.listing.md`)
     writeFileSync(listingPath, listingMarkdown({ slug, folder, md, yaml }))
 

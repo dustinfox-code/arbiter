@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { TaskContextManager } from '../../src/core/task-manager.js'
+import { TaskContextManager, validateTask } from '../../src/core/task-manager.js'
 
 describe('TaskContextManager', () => {
   let tempDir: string
@@ -87,5 +87,30 @@ describe('TaskContextManager', () => {
     const updated = await manager.addCheckpoint(checkpoint)
     expect(updated.checkpoints).toHaveLength(1)
     expect(updated.checkpoints[0].id).toBe('cp-1')
+  })
+})
+
+describe('validateTask', () => {
+  const good = {
+    id: 't', description: 'd', criteria: [{ id: 'c', type: 'command', description: 'x', required: true, config: {} }],
+    status: 'pending', iteration: 0, maxIterations: 5, createdAt: 'now', updatedAt: 'now', checkpoints: [], metadata: {},
+  }
+
+  it('accepts a well-formed task and defaults metadata', () => {
+    const { metadata: _m, ...noMeta } = good
+    expect(validateTask(noMeta).metadata).toEqual({})
+  })
+
+  it('rejects an empty object with every missing field named', () => {
+    expect(() => validateTask({})).toThrow(/id must be/)
+    expect(() => validateTask({})).toThrow(/maxIterations must be/)
+    expect(() => validateTask({})).toThrow(/status must be one of/)
+  })
+
+  it('rejects a missing iteration guard and malformed criteria', () => {
+    expect(() => validateTask({ ...good, maxIterations: 0 })).toThrow(/maxIterations/)
+    expect(() => validateTask({ ...good, iteration: -1 })).toThrow(/iteration/)
+    expect(() => validateTask({ ...good, criteria: [{ id: 'c' }] })).toThrow(/criteria\[0\]/)
+    expect(() => validateTask([])).toThrow(/root is not an object/)
   })
 })

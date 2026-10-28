@@ -60,6 +60,14 @@ describe('package:skills', () => {
     expect(critic).toContain('spec-drift-review')
   })
 
+  it('stages openai.yaml unchanged beside the rewritten SKILL.md', async () => {
+    for (const r of results) {
+      const staged = await readFile(join(out, r.slug, 'agents', 'openai.yaml'), 'utf-8')
+      const source = await readFile(join(process.cwd(), 'skills', r.folder, 'agents', 'openai.yaml'), 'utf-8')
+      expect(staged, r.slug).toBe(source)
+    }
+  })
+
   it('writes a listing draft per skill with slug, price, tags and the plugin install line', async () => {
     for (const r of results) {
       const listing = await readFile(r.listingPath, 'utf-8')
@@ -78,6 +86,8 @@ describe('package:skills', () => {
     const when = new Date(2026, 0, 1, 12, 0, 0)
     const a = buildZip([{ name: 'x/SKILL.md', data: Buffer.from('hi') }], when)
     const b = buildZip([{ name: 'x/SKILL.md', data: Buffer.from('hi') }], when)
+    const c = buildZip([{ name: 'x/SKILL.md', data: Buffer.from('ho') }], when)
     expect(Buffer.compare(a, b)).toBe(0)
+    expect(Buffer.compare(a, c)).not.toBe(0)
   })
 })

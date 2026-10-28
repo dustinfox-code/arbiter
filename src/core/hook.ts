@@ -215,15 +215,23 @@ export class HookInterface {
         process.stderr.write(`Arbiter: Agent is continuing from an earlier stop hook (iteration ${iteration}/${task.maxIterations})\n`)
       }
 
-      // Run all criteria.
-      const evaluator = new CriteriaEvaluator(cwd, config.llmModel, config, task.description)
-      const results = await evaluator.evaluate(task.criteria, payload ?? undefined)
+      // Run all criteria and record the checkpoint. If any of that throws
+      // (a checkpoint write failing, say), give the iteration back: an
+      // Arbiter failure exits 1 and is non-blocking, so it must not spend
+      // the agent's budget.
+      let results: CriteriaResult[]
+      try {
+        const evaluator = new CriteriaEvaluator(cwd, config.llmModel, config, task.description)
+        results = await evaluator.evaluate(task.criteria, payload ?? undefined)
 
-      // Write a checkpoint.
-      const checkpointManager = new CheckpointManager(cwd, config.checkpointDir)
-      const checkpoint = checkpointManager.buildCheckpoint(iteration, results)
-      await checkpointManager.write(checkpoint)
-      await taskManager.addCheckpoint(checkpoint)
+        const checkpointManager = new CheckpointManager(cwd, config.checkpointDir)
+        const checkpoint = checkpointManager.buildCheckpoint(iteration, results)
+        await checkpointManager.write(checkpoint)
+        await taskManager.addCheckpoint(checkpoint)
+      } catch (err) {
+        await taskManager.update({ status: task.status, iteration: task.iteration }).catch(() => undefined)
+        throw err
+      }
 
       const passedCriteria = results.filter(r => r.passed).map(r => r.criteriaId)
       const failedCriteria = results.filter(r => !r.passed).map(r => r.criteriaId)

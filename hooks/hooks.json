@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npx arbiter-cc check",
+            "command": "npx arbiter-cc@0.2.0 check",
             "timeout": 120
           }
         ]

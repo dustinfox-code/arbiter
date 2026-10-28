@@ -172,6 +172,36 @@ describe('HookInterface', () => {
       expect(stdoutData).toBe('')
     })
 
+    it('speaks Cursor: followup_message, from a Cursor-shaped payload', async () => {
+      await writeTask(makeTask({ criteria: failingCriteria }))
+      const cursorPayload = JSON.stringify({ conversation_id: 'c1', generation_id: 'g1', workspace_roots: [tempDir], status: 'completed', loop_count: 0 })
+      await runHook({ stdinData: cursorPayload, agent: 'cursor' })
+      expect(process.exitCode).toBe(0)
+      const parsed = JSON.parse(stdoutData) as Record<string, string>
+      expect(Object.keys(parsed)).toEqual(['followup_message'])
+      expect(parsed.followup_message).toContain('[cmd-fail]')
+      const task = await loadTask()
+      expect((task.metadata.lastStop as { sessionId: string; promptId: string }).sessionId).toBe('c1')
+      expect((task.metadata.lastStop as { sessionId: string; promptId: string }).promptId).toBe('g1')
+    })
+
+    it('speaks Gemini: decision deny', async () => {
+      await writeTask(makeTask({ criteria: failingCriteria }))
+      await runHook({ cwd: tempDir, stdinData: payloadFor(), agent: 'gemini' })
+      const parsed = JSON.parse(stdoutData) as { decision: string; reason: string }
+      expect(parsed.decision).toBe('deny')
+      expect(parsed.reason).toContain('Criteria Not Met')
+    })
+
+    it('speaks Codex and Copilot: decision block', async () => {
+      for (const agent of ['codex', 'copilot'] as const) {
+        stdoutData = ''
+        await writeTask(makeTask({ criteria: failingCriteria }))
+        await runHook({ cwd: tempDir, stdinData: '', agent })
+        expect(JSON.parse(stdoutData).decision, agent).toBe('block')
+      }
+    })
+
     it('exits 1 (non-blocking) on a malformed payload', async () => {
       await writeTask(makeTask())
       await runHook({ cwd: tempDir, stdinData: '{not json' })
@@ -229,13 +259,13 @@ describe('HookInterface', () => {
     it('falls back to a time window when prompt_id is absent', async () => {
       await writeTask(makeTask({ criteria: failingCriteria }))
 
-      const first = await hook.run({ stdinData: payloadFor(), replayWindowMs: 200 })
-      const second = await hook.run({ stdinData: payloadFor(), replayWindowMs: 200 })
+      const first = await hook.run({ stdinData: payloadFor(), replayWindowMs: 1000 })
+      const second = await hook.run({ stdinData: payloadFor(), replayWindowMs: 1000 })
       expect(first.iteration).toBe(1)
       expect(second.replayed).toBe(true)
 
-      await new Promise(r => setTimeout(r, 250))
-      const third = await hook.run({ stdinData: payloadFor(), replayWindowMs: 200 })
+      await new Promise(r => setTimeout(r, 1300))
+      const third = await hook.run({ stdinData: payloadFor(), replayWindowMs: 1000 })
       expect(third.replayed).toBeUndefined()
       expect(third.iteration).toBe(2)
     })
@@ -279,6 +309,16 @@ describe('HookInterface', () => {
       expect(result.decision).toBe('error')
       expect(stderrData).toContain('failing open')
       expect((await loadTask()).iteration).toBe(0)
+    })
+
+    it('gives the iteration back when evaluation crashes', async () => {
+      await writeTask(makeTask({ criteria: failingCriteria }))
+      // An unreadable checkpoint directory makes the checkpoint write throw
+      await writeFile(join(tempDir, '.arbiter', 'checkpoints'), 'not a directory')
+      await expect(hook.run({ cwd: tempDir, stdinData: '' })).rejects.toThrow()
+      const task = await loadTask()
+      expect(task.iteration).toBe(0)
+      expect(task.status).toBe('pending')
     })
 
     it('records stop_hook_active with the last stop', async () => {

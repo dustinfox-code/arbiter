@@ -28,9 +28,11 @@ describe('emitForAgent', () => {
     expect(JSON.parse(out.stdout)).toEqual({ decision: 'block', reason: '## Arbiter: Criteria Not Met\n- [x] y' })
   })
 
-  it('loop without feedback falls back to the summary', () => {
-    const out = emitForAgent(result({ decision: 'loop', summary: '2 failed' }), 'claude')
-    expect(JSON.parse(out.stdout).reason).toBe('2 failed')
+  it('loop without feedback falls back to the summary, for every agent', () => {
+    for (const agent of AGENT_IDS) {
+      const out = JSON.parse(emitForAgent(result({ decision: 'loop', summary: '2 failed' }), agent).stdout) as Record<string, string>
+      expect(out.reason ?? out.followup_message, agent).toBe('2 failed')
+    }
   })
 
   it('codex and copilot share the Claude block shape', () => {
@@ -58,14 +60,14 @@ describe('emitForAgent', () => {
     }
   })
 
-  it('every agent has info with an event and a verification flag', () => {
-    for (const agent of AGENT_IDS) {
-      expect(AGENT_INFO[agent].event).toBeTruthy()
-      expect(typeof AGENT_INFO[agent].verified).toBe('boolean')
-    }
-    expect(AGENT_INFO.claude.verified).toBe(true)
-    expect(AGENT_INFO.codex.verified).toBe(false)
-    expect(AGENT_INFO.gemini.configPath).toBeNull()
+  it('agent info names the documented event and config file for each agent', () => {
+    expect(Object.fromEntries(AGENT_IDS.map(a => [a, [AGENT_INFO[a].event, AGENT_INFO[a].configPath, AGENT_INFO[a].verified]]))).toEqual({
+      claude: ['Stop', '.claude/settings.json', true],
+      codex: ['Stop', '.codex/hooks.json', false],
+      copilot: ['agentStop', '.github/hooks/arbiter.json', false],
+      gemini: ['AfterAgent', null, false],
+      cursor: ['stop', '.cursor/hooks.json', false],
+    })
   })
 
   it('defaults to claude', () => {
@@ -112,6 +114,14 @@ describe('normalizeStopPayload', () => {
     expect(p.session_id).toBe('c')
     expect(p.prompt_id).toBe('g')
     expect(p.cwd).toBe('/root')
+    expect(p.stop_hook_active).toBe(false)
+  })
+
+  it('maps a Gemini AfterAgent payload (snake_case, no turn id)', () => {
+    const p = normalizeStopPayload({ session_id: 'g', transcript_path: '/t', cwd: '/w', hook_event_name: 'AfterAgent', prompt: 'do x', prompt_response: 'done', stop_hook_active: false })
+    expect(p.session_id).toBe('g')
+    expect(p.cwd).toBe('/w')
+    expect(p.prompt_id).toBeUndefined()
     expect(p.stop_hook_active).toBe(false)
   })
 

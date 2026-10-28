@@ -76,7 +76,7 @@ async function handleInit(cwd: string, args: ParsedArgs): Promise<void> {
   if (agentFlag === 'all') {
     printWireResults(await wireDetectedAgents(cwd))
   } else {
-    const agent: AgentId = typeof agentFlag === 'string' ? parseAgentId(agentFlag) : 'claude'
+    const agent: AgentId = agentFlag === undefined ? 'claude' : parseAgentId(agentFlag)
     printWireResults([await wireAgentHook(cwd, agent)])
   }
 
@@ -204,6 +204,12 @@ async function handleTaskStatus(cwd: string): Promise<void> {
   console.log(`  Created: ${task.createdAt}`)
   console.log(`  Updated: ${task.updatedAt}`)
 
+  const loopPasses = Array.isArray(task.metadata?.loopPasses) ? (task.metadata.loopPasses as Array<Record<string, unknown>>) : []
+  if (loopPasses.length > 0) {
+    const last = loopPasses[loopPasses.length - 1]
+    console.log(`  Loop skill passes: ${loopPasses.length}/${task.maxIterations} (last: ${String(last.at ?? '')})`)
+  }
+
   if (task.checkpoints.length > 0) {
     const last = task.checkpoints[task.checkpoints.length - 1]
     console.log(`\n  Last checkpoint (iteration ${last.iteration}):`)
@@ -226,7 +232,7 @@ async function handleTaskClear(cwd: string): Promise<void> {
 }
 
 async function handleCheck(cwd: string, args: ParsedArgs): Promise<void> {
-  const agent: AgentId = typeof args.flags.agent === 'string' ? parseAgentId(args.flags.agent) : 'claude'
+  const agent: AgentId = args.flags.agent === undefined ? 'claude' : parseAgentId(args.flags.agent)
   await runHook({ cwd, agent })
 }
 

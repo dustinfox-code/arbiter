@@ -1,6 +1,6 @@
-import { open, unlink, stat, mkdir } from 'node:fs/promises'
+import { open, unlink, stat, mkdir, rename, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { LastStopRecord, StopPayload } from './types.js'
 
 const POLL_MS = 100
@@ -24,26 +24,34 @@ function sleep(ms: number): Promise<void> {
  * evaluating again and burning a second iteration.
  *
  * Uses an O_EXCL file create, which is atomic on every platform Node runs on.
- * A lock older than ten minutes is treated as left behind by a killed process.
+ * The file holds a token; `release` only removes the file if the token is
+ * still ours, so a process can never delete a lock another process has since
+ * taken. A lock older than ten minutes is treated as left behind by a killed
+ * process and reclaimed by atomic rename, so two reclaimers cannot both win.
  */
 export async function acquireStopLock(lockPath: string, timeoutMs: number): Promise<StopLock> {
   await mkdir(dirname(lockPath), { recursive: true })
   const deadline = Date.now() + timeoutMs
+  const token = `${process.pid}-${randomUUID()}`
 
   for (;;) {
     try {
       const handle = await open(lockPath, 'wx')
       try {
-        await handle.writeFile(JSON.stringify({ pid: process.pid, at: new Date().toISOString() }))
-      } finally {
-        await handle.close()
+        await handle.writeFile(JSON.stringify({ pid: process.pid, token, at: new Date().toISOString() }))
+      } catch (writeErr) {
+        await handle.close().catch(() => undefined)
+        await unlink(lockPath).catch(() => undefined)
+        throw writeErr
       }
+      await handle.close()
       return {
         release: async () => {
           try {
-            await unlink(lockPath)
+            const current = JSON.parse(await readFile(lockPath, 'utf-8')) as { token?: string }
+            if (current.token === token) await unlink(lockPath)
           } catch {
-            // Already gone — nothing to release
+            // Already gone, or not ours to remove
           }
         },
       }
@@ -55,11 +63,14 @@ export async function acquireStopLock(lockPath: string, timeoutMs: number): Prom
     try {
       const info = await stat(lockPath)
       if (Date.now() - info.mtimeMs > STALE_LOCK_MS) {
-        await unlink(lockPath).catch(() => undefined)
+        // rename is atomic: exactly one reclaimer succeeds, and nobody unlinks a fresh lock by mistake
+        const graveyard = `${lockPath}.stale-${token}`
+        await rename(lockPath, graveyard)
+        await unlink(graveyard).catch(() => undefined)
         continue
       }
     } catch {
-      continue // Released between our open() and stat() — retry immediately
+      continue // Released or reclaimed by someone else between our calls — retry immediately
     }
 
     if (Date.now() >= deadline) {

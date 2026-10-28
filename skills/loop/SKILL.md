@@ -10,7 +10,7 @@ This skill is the discipline. Enforcement, a stop hook that evaluates the same `
 
 ## status
 
-When the argument is `status`: read `.arbiter/task.json` and report the description, status, iteration of max, each criterion with required or optional, and the pass and fail lists of the last checkpoint. Then stop.
+When the argument is `status`: read `.arbiter/task.json` and report the description, status, how many of `maxIterations` passes have been used (the longer of `metadata.loopPasses` and `iteration`), each criterion with required or optional, and the pass and fail lists of the most recent pass. Then stop.
 
 ## 1. Capture the task
 
@@ -77,22 +77,22 @@ Before saying the task is done, evaluate every criterion yourself and record the
 - `critic`: call the Skill tool with "critic", passing `config.files` (default `git-diff`) and `config.personas` when set. Pass when no persona reports an error.
 - `custom`: a JavaScript module only the stop hook can run; record it as unverified and say so.
 
-Then update the task file: increment `iteration`, and append a checkpoint:
+Then record the pass by appending to `metadata.loopPasses` in the task file. Leave `iteration` and `checkpoints` alone: they are the stop hook's ledger, and a project with the hook installed would otherwise spend two iterations for every real pass.
 
 ```json
-{ "id": "checkpoint-<iteration>-<compact timestamp>", "iteration": 1, "timestamp": "<ISO 8601>", "gitHash": "<git rev-parse HEAD, when in a repo>", "criteriaResults": [ { "criteriaId": "tests-pass", "passed": false, "required": true, "description": "All tests pass", "feedback": "<failing lines>", "durationMs": 1200 } ], "passedIds": [], "failedIds": ["tests-pass"] }
+{ "at": "<ISO 8601>", "gitHash": "<git rev-parse HEAD, when in a repo>", "passedIds": [], "failedIds": ["tests-pass"], "feedback": { "tests-pass": "<failing lines>" } }
 ```
 
 - Every required criterion passed: set `status` to `complete` and report.
-- A required criterion failed and `iteration` is below `maxIterations`: fix what the feedback names, then verify again.
-- A required criterion failed and `iteration` equals `maxIterations`: set `status` to `failed` and report.
+- A required criterion failed and `metadata.loopPasses` has fewer than `maxIterations` entries: fix what the feedback names, then verify again.
+- A required criterion failed and `metadata.loopPasses` has `maxIterations` entries: set `status` to `failed` and report.
 
 A criterion that fails for an environment reason (a missing tool, no network, no API key) is reported as exactly that, with the criterion still marked failed. Done when `status` is `complete` or `failed`.
 
 ## 6. Report
 
 ```
-loop: complete (iteration 2/5)
+loop: complete (pass 2 of 5)
 - [tests-pass] All tests pass — passed
 - [no-ts-errors] No TypeScript errors — passed
 - [lint] Lint is clean — passed (optional)

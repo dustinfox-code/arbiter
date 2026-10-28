@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { readdir, readFile, stat, mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { validateTask, TaskContextManager } from '../../src/core/task-manager.js'
+import { HookInterface } from '../../src/core/hook.js'
+import { vi } from 'vitest'
 
 const SKILLS_DIR = join(process.cwd(), 'skills')
 const PERSONA_SKILLS = [
@@ -34,35 +38,59 @@ async function skillDirs(): Promise<string[]> {
 }
 
 describe('loop skill contract', () => {
-  it('documents a task.json example that matches the TaskContext shape the hook reads', async () => {
+  async function taskExample(): Promise<Record<string, unknown>> {
     const text = await readFile(join(SKILLS_DIR, 'loop', 'SKILL.md'), 'utf-8')
     const fence = text.match(/```json\n(\{\n  "id": "<uuid>"[\s\S]*?)\n```/)
     expect(fence, 'task.json example fence').not.toBeNull()
-    const task = JSON.parse(fence![1]) as Record<string, unknown>
-    for (const key of ['id', 'description', 'criteria', 'status', 'iteration', 'maxIterations', 'createdAt', 'updatedAt', 'checkpoints', 'metadata']) {
-      expect(task, `task.json example has ${key}`).toHaveProperty(key)
-    }
+    return JSON.parse(fence![1]) as Record<string, unknown>
+  }
+
+  it('documents a task.json example that the real loader accepts', async () => {
+    const task = validateTask(await taskExample(), 'loop/SKILL.md example')
     expect(task.status).toBe('pending')
     expect(task.maxIterations).toBe(5)
-    for (const c of task.criteria as Array<Record<string, unknown>>) {
-      for (const key of ['id', 'type', 'description', 'required', 'config']) {
-        expect(c, `criterion has ${key}`).toHaveProperty(key)
-      }
+    expect(task.criteria.map(c => c.type)).toEqual(['tests-pass', 'no-ts-errors', 'command', 'critic'])
+  })
+
+  it('the example, written to disk, is evaluated by the stop hook', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'arbiter-loop-example-'))
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    try {
+      const example = await taskExample()
+      // Swap the stack-specific commands for ones that run anywhere, keeping the shape
+      example.criteria = [
+        { id: 'tests-pass', type: 'command', description: 'All tests pass', required: true, config: { command: 'true' } },
+        { id: 'lint', type: 'command', description: 'Lint is clean', required: false, config: { command: 'false' } },
+      ]
+      await mkdir(join(dir, '.arbiter'))
+      await writeFile(join(dir, '.arbiter', 'task.json'), JSON.stringify(example))
+      const loaded = await new TaskContextManager(dir).load()
+      expect(loaded?.id).toBe('<uuid>')
+      const result = await new HookInterface().run({ cwd: dir, stdinData: '' })
+      expect(result.decision).toBe('proceed')
+      expect(result.passedCriteria).toEqual(['tests-pass'])
+      expect(result.failedCriteria).toEqual(['lint'])
+    } finally {
+      err.mockRestore()
+      await rm(dir, { recursive: true, force: true })
     }
   })
 
-  it('documents a checkpoint example with the fields the CLI prints', async () => {
+  it('documents a loopPasses entry rather than touching the hook\'s iteration ledger', async () => {
     const text = await readFile(join(SKILLS_DIR, 'loop', 'SKILL.md'), 'utf-8')
-    const fence = text.match(/```json\n(\{ "id": "checkpoint-[\s\S]*?)\n```/)
-    expect(fence, 'checkpoint example fence').not.toBeNull()
-    const cp = JSON.parse(fence![1]) as Record<string, unknown>
-    for (const key of ['id', 'iteration', 'timestamp', 'criteriaResults', 'passedIds', 'failedIds']) {
-      expect(cp, `checkpoint example has ${key}`).toHaveProperty(key)
+    const fence = text.match(/```json\n(\{ "at": [\s\S]*?)\n```/)
+    expect(fence, 'loopPasses example fence').not.toBeNull()
+    const entry = JSON.parse(fence![1]) as Record<string, unknown>
+    for (const key of ['at', 'passedIds', 'failedIds', 'feedback']) {
+      expect(entry, `loopPasses example has ${key}`).toHaveProperty(key)
     }
+    expect(text).toContain('metadata.loopPasses')
+    expect(text).toContain('Leave `iteration` and `checkpoints` alone')
   })
 
-  it('mentions the npm package once, as a link, with nothing executable', async () => {
+  it('mentions the npm package exactly once, as a link, with nothing executable', async () => {
     const text = await readFile(join(SKILLS_DIR, 'loop', 'SKILL.md'), 'utf-8')
+    // Exactly once is the design rule: one sentence, one link, no instructions
     expect(text.match(/arbiter-cc/g)?.length).toBe(1)
     expect(text).toMatch(/https:\/\/github\.com\/dustinfox-code\/arbiter/)
   })
