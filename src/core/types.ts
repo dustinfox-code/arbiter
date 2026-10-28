@@ -57,7 +57,7 @@ export interface Checkpoint {
 // The result of a critic review pass
 export interface ReviewResult {
   passed: boolean
-  persona: string          // Which lens ran (e.g. "correctness", "security")
+  persona: string          // Which lens ran (e.g. "spec-drift-review", "ai-code-security-review")
   findings: Finding[]
   summary: string
 }
@@ -126,7 +126,7 @@ export interface ArbiterConfig {
   llmModel: string                // Default: claude-sonnet-4-20250514
   critic: {
     enabled: boolean              // Default: false (Phase 2)
-    personas: string[]            // Default: ["correctness", "edge-cases", "security"]
+    personas: string[]            // Default: ["spec-drift-review", "edge-case-review", "ai-code-security-review"]
     failOnWarnings: boolean       // Default: false
     customPersonas: CustomPersonaConfig[]  // Default: []
   }
@@ -139,7 +139,7 @@ export const DEFAULT_CONFIG: ArbiterConfig = {
   llmModel: 'claude-sonnet-4-20250514',
   critic: {
     enabled: false,
-    personas: ['correctness', 'edge-cases', 'security'],
+    personas: ['spec-drift-review', 'edge-case-review', 'ai-code-security-review'],
     failOnWarnings: false,
     customPersonas: [],
   },

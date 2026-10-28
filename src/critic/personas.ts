@@ -1,9 +1,41 @@
+import { readFileSync, existsSync } from 'node:fs'
+import { join, dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { CustomPersonaConfig } from '../core/types.js'
 
 export interface PersonaDefinition {
   id: string
   description: string
   systemPrompt: string
+}
+
+/**
+ * The built-in personas are the five review skills in `skills/`. Each
+ * SKILL.md carries its checklist between these markers; that section, plus
+ * the JSON response contract below, is the persona's API system prompt.
+ * One file serves the skill (read by the agent) and the CLI (read here),
+ * so the two can never drift.
+ */
+export const PERSONA_START = '<!-- arbiter:persona:start -->'
+export const PERSONA_END = '<!-- arbiter:persona:end -->'
+
+export const BUILT_IN_PERSONA_IDS = [
+  'spec-drift-review',
+  'edge-case-review',
+  'ai-code-security-review',
+  'hallucinated-api-review',
+  'tautological-test-review',
+] as const
+
+export type BuiltInPersonaId = (typeof BUILT_IN_PERSONA_IDS)[number]
+
+/** 0.1.x persona ids, accepted in config and on the command line. */
+export const PERSONA_ALIASES: Record<string, BuiltInPersonaId> = {
+  correctness: 'spec-drift-review',
+  'edge-cases': 'edge-case-review',
+  security: 'ai-code-security-review',
+  hallucinations: 'hallucinated-api-review',
+  'test-quality': 'tautological-test-review',
 }
 
 const RESPONSE_FORMAT_INSTRUCTION = `
@@ -21,113 +53,91 @@ Respond with JSON matching this exact schema — no text outside the JSON object
   "summary": "One-sentence overall assessment"
 }
 
-If no issues are found, return: { "findings": [], "summary": "No issues found." }`
+Report the clean categories as one "info" finding whose message is "Checked, no issues: <categories>".
+If nothing at all was found, return: { "findings": [{ "severity": "info", "message": "Checked, no issues: <all categories>" }], "summary": "No issues found." }`
 
-export const BUILT_IN_PERSONAS: Record<string, PersonaDefinition> = {
-  correctness: {
-    id: 'correctness',
-    description: 'Checks implementation against the task description. Flags spec drift.',
-    systemPrompt: `You are reviewing AI-generated code for correctness against a task description.
+/**
+ * Pull the persona section out of a SKILL.md. Exported for tests and for
+ * anyone building a persona from their own skill file.
+ */
+export function extractPersonaSection(markdown: string, source = 'SKILL.md'): string {
+  const start = markdown.indexOf(PERSONA_START)
+  const end = markdown.indexOf(PERSONA_END)
+  if (start === -1 || end === -1 || end < start) {
+    throw new Error(`${source} has no ${PERSONA_START} … ${PERSONA_END} section`)
+  }
+  return markdown.slice(start + PERSONA_START.length, end).trim()
+}
 
-Your job:
-- Check whether the implementation matches what was asked for in the task description
-- Flag spec drift — places where the code does something, just not what was requested
-- Check that function signatures, return types, and data flow match the stated requirements
-- Verify that all acceptance criteria from the task description are addressed in the code
-- Flag any TODO comments, placeholder implementations, or incomplete features
+function readFrontmatterField(markdown: string, field: string): string | undefined {
+  const block = markdown.match(/^---\n([\s\S]*?)\n---\n/)
+  if (!block) return undefined
+  for (const line of block[1].split('\n')) {
+    const idx = line.indexOf(':')
+    if (idx === -1) continue
+    if (line.slice(0, idx).trim() !== field) continue
+    let value = line.slice(idx + 1).trim()
+    if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1)
+    return value
+  }
+  return undefined
+}
 
-Do NOT flag style issues, performance concerns, or security problems — other reviewers handle those.${RESPONSE_FORMAT_INSTRUCTION}`,
-  },
+/**
+ * Locate the package's `skills/` directory. Works from `src/` under vitest
+ * and from `dist/` in the published package, since both sit two levels
+ * below the package root.
+ */
+export function skillsDir(): string {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const candidate = resolve(here, '..', '..', 'skills')
+  if (!existsSync(candidate)) {
+    throw new Error(`Arbiter skills directory not found at ${candidate}. Is the package installed completely?`)
+  }
+  return candidate
+}
 
-  'edge-cases': {
-    id: 'edge-cases',
-    description: 'Evaluates a fixed checklist of edge-case categories: bounds checking, null/undefined, promise rejections, type validation, off-by-one, error propagation, and resource cleanup.',
-    systemPrompt: `You are reviewing AI-generated code for missing edge case handling.
+let cache: Record<string, PersonaDefinition> | null = null
 
-You MUST evaluate every category in the checklist below. For each category, either report concrete findings or explicitly confirm it was checked with no issues. Do not skip categories.
+/**
+ * Load the five built-in personas from their skill files. Read once per
+ * process; the files are small and the result is memoised.
+ */
+export function getBuiltInPersonas(): Record<string, PersonaDefinition> {
+  if (cache) return cache
+  const dir = skillsDir()
+  const personas: Record<string, PersonaDefinition> = {}
+  for (const id of BUILT_IN_PERSONA_IDS) {
+    const path = join(dir, id, 'SKILL.md')
+    const markdown = readFileSync(path, 'utf-8')
+    personas[id] = {
+      id,
+      description: readFrontmatterField(markdown, 'description') ?? id,
+      systemPrompt: extractPersonaSection(markdown, path) + RESPONSE_FORMAT_INSTRUCTION,
+    }
+  }
+  cache = personas
+  return personas
+}
 
-## Checklist
-
-1. **Array/collection bounds** — Array or collection access without bounds checking. Indexing into arrays with dynamic values, accessing .length on potentially undefined collections, destructuring from possibly-empty arrays.
-
-2. **Null/undefined paths** — Code paths where null or undefined can flow into operations that assume a value exists. Property access chains without guards, optional chaining gaps, function return values that may be undefined but are used as if defined.
-
-3. **Unhandled promise rejections** — Async calls without try/catch or .catch(), missing await keywords that silently drop errors, Promise.all without handling partial failures, async callbacks in non-async contexts.
-
-4. **Type assumption without validation** — Function arguments assumed to be a specific type without runtime validation at system boundaries. String methods called on values that could be numbers, object spread on values that could be null, .map() on values that could be non-arrays.
-
-5. **Off-by-one conditions** — Off-by-one errors in loop bounds, slice/substring indices, length comparisons, fence-post errors in pagination or range calculations.
-
-6. **Missing error propagation** — Errors that are caught but swallowed: empty catch blocks, catch blocks that log but don't re-throw or return error state, error callbacks that ignore the error parameter.
-
-7. **Timeout and resource cleanup** — Missing cleanup for timers (setTimeout/setInterval), open file handles, network connections, event listeners, or child processes. Missing finally blocks where cleanup is needed regardless of success or failure.
-
-Focus on issues that will cause runtime failures, not theoretical concerns.
-
-${RESPONSE_FORMAT_INSTRUCTION}
-
-IMPORTANT: You must include at least one entry per checklist category. For categories with no issues, include an "info" severity finding with message: "[Category name]: Checked — no issues found." For categories with issues, prefix each finding's message with "[Category name]: ".`,
-  },
-
-  security: {
-    id: 'security',
-    description: 'Basic security review: injection, unsafe ops, credentials, validation.',
-    systemPrompt: `You are reviewing AI-generated code for security vulnerabilities.
-
-Your job:
-- Check for injection risks: command injection via unsanitized input to exec/spawn, SQL injection, template injection
-- Check for path traversal: user-controlled file paths that escape the intended directory
-- Look for hardcoded secrets: API keys, passwords, tokens, credentials in source code
-- Check for insecure defaults: permissive CORS, debug mode enabled, verbose error messages exposing internals
-- Verify input validation at system boundaries: user input, API parameters, file contents, environment variables
-- Check for unsafe operations: eval(), Function(), dynamic import of user-controlled paths without validation
-
-Only flag real vulnerabilities with a clear attack vector, not theoretical concerns.${RESPONSE_FORMAT_INSTRUCTION}`,
-  },
-
-  hallucinations: {
-    id: 'hallucinations',
-    description: 'Verifies imports exist in dependencies and called methods are real.',
-    systemPrompt: `You are reviewing AI-generated code for hallucinated APIs — imports, methods, or types that look correct but do not actually exist.
-
-Your job:
-- Check that all imported npm packages exist in the package.json dependencies or devDependencies. If package.json is provided in the context files, cross-reference against it.
-- Check that imported members (named imports) are real exports of their packages. Flag imports that look plausible but may not exist.
-- Check that called methods are real members of their types. For example, Array.prototype has .map() but not .flatSort().
-- Check that Node.js built-in API usage matches the actual API (e.g., fs.readFile exists, fs.readFileContents does not).
-- Check that TypeScript utility types are used correctly (e.g., Partial<T> exists, DeepPartial<T> does not without a custom definition).
-
-Be conservative — only flag imports/methods you are confident do not exist. If unsure, use "info" severity.${RESPONSE_FORMAT_INSTRUCTION}`,
-  },
-
-  'test-quality': {
-    id: 'test-quality',
-    description: 'Checks whether tests verify requirements or just mirror the implementation.',
-    systemPrompt: `You are reviewing AI-generated tests for quality and effectiveness.
-
-Your job:
-- Flag tautological tests: tests that pass because they test the implementation rather than the requirements. Example: a test that mocks the function being tested and asserts the mock was called.
-- Flag tests with no real assertions: tests that call code but never assert meaningful outcomes.
-- Check for missing coverage of stated requirements: if the task description says "handle errors gracefully," there should be tests for error cases.
-- Flag tests that would pass even if the implementation were completely wrong (e.g., testing a constant, asserting on mock return values).
-- Check for brittle test patterns: tests that depend on implementation details rather than observable behavior.
-- Flag snapshot tests that are used as a substitute for actual assertions.
-
-Compare tests against the task description to verify they test requirements, not just code paths.${RESPONSE_FORMAT_INSTRUCTION}`,
-  },
+/** Map a persona id or 0.1.x alias to its canonical id. Unknown ids pass through. */
+export function canonicalPersonaId(id: string): string {
+  return PERSONA_ALIASES[id] ?? id
 }
 
 /**
  * Resolve persona IDs to their definitions. Custom personas override built-in
- * ones by matching ID. Throws if a requested ID is not found.
+ * ones by matching ID (canonical or alias). Throws if a requested ID is not found.
  */
 export function resolvePersonas(
   requestedIds: string[],
   customPersonas: CustomPersonaConfig[],
 ): PersonaDefinition[] {
+  const builtIn = getBuiltInPersonas()
+
   const customMap = new Map<string, PersonaDefinition>()
   for (const cp of customPersonas) {
-    customMap.set(cp.id, {
+    customMap.set(canonicalPersonaId(cp.id), {
       id: cp.id,
       description: cp.description,
       systemPrompt: cp.systemPrompt,
@@ -137,21 +147,22 @@ export function resolvePersonas(
   const resolved: PersonaDefinition[] = []
   const missing: string[] = []
 
-  for (const id of requestedIds) {
+  for (const requested of requestedIds) {
+    const id = canonicalPersonaId(requested)
     const custom = customMap.get(id)
     if (custom) {
       resolved.push(custom)
-    } else if (BUILT_IN_PERSONAS[id]) {
-      resolved.push(BUILT_IN_PERSONAS[id])
+    } else if (builtIn[id]) {
+      resolved.push(builtIn[id])
     } else {
-      missing.push(id)
+      missing.push(requested)
     }
   }
 
   if (missing.length > 0) {
     throw new Error(
       `Unknown critic persona(s): ${missing.join(', ')}. ` +
-      `Available: ${Object.keys(BUILT_IN_PERSONAS).join(', ')}` +
+      `Available: ${BUILT_IN_PERSONA_IDS.join(', ')}` +
       (customPersonas.length > 0 ? `, ${customPersonas.map(p => p.id).join(', ')}` : ''),
     )
   }

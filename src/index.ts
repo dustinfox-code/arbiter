@@ -14,8 +14,18 @@ export { resolveContextFiles, isPathContained } from './core/files.js'
 // Critic module
 export { runCritic } from './critic/runner.js'
 export type { CriticRunOptions, CriticRunResult } from './critic/runner.js'
-export { BUILT_IN_PERSONAS, resolvePersonas } from './critic/personas.js'
-export type { PersonaDefinition } from './critic/personas.js'
+export {
+  getBuiltInPersonas,
+  resolvePersonas,
+  extractPersonaSection,
+  canonicalPersonaId,
+  skillsDir,
+  BUILT_IN_PERSONA_IDS,
+  PERSONA_ALIASES,
+  PERSONA_START,
+  PERSONA_END,
+} from './critic/personas.js'
+export type { PersonaDefinition, BuiltInPersonaId } from './critic/personas.js'
 
 // Types and constants
 export {

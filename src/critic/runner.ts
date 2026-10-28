@@ -1,6 +1,6 @@
 import type { CustomPersonaConfig, ReviewResult, Finding } from '../core/types.js'
 import { resolveContextFiles } from '../core/files.js'
-import { resolvePersonas, type PersonaDefinition } from './personas.js'
+import { resolvePersonas, canonicalPersonaId, type PersonaDefinition } from './personas.js'
 import { pooled } from '../core/pool.js'
 
 const CONCURRENCY = 3
@@ -286,8 +286,8 @@ export async function runCritic(options: CriticRunOptions): Promise<CriticRunRes
   // Gather context files
   let contextFiles = await resolveContextFiles(files, cwd)
 
-  // For the hallucinations persona, always include package.json
-  const hasHallucinations = personaIds.includes('hallucinations')
+  // The hallucinated-API persona checks imports against the manifest, so always include it
+  const hasHallucinations = personaIds.map(canonicalPersonaId).includes('hallucinated-api-review')
   if (hasHallucinations && !contextFiles.some(f => f.path === 'package.json')) {
     const pkgFiles = await resolveContextFiles(['package.json'], cwd)
     contextFiles = [...contextFiles, ...pkgFiles]
