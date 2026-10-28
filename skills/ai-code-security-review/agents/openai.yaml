@@ -1,0 +1,3 @@
+interface:
+  display_name: "AI Code Security Review"
+  short_description: "Injection, traversal, secrets, unsafe eval, untrusted input, insecure defaults"
