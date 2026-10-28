@@ -1,7 +1,7 @@
 {
   "name": "arbiter-cc",
-  "version": "0.1.0",
-  "description": "Loop agent and critic for Claude Code — enforce task completion before stopping",
+  "version": "0.2.0",
+  "description": "Adversarial code review personas and a definition-of-done loop for AI coding agents \u2014 as skills, a Claude Code plugin, and a stop hook that enforces the loop in Claude Code, Codex, Copilot, Gemini and Cursor",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,7 +19,9 @@
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "version": "node scripts/sync-plugin-version.mjs",
+    "check:version": "node scripts/sync-plugin-version.mjs --check"
   },
   "engines": {
     "node": ">=18"
@@ -27,15 +29,24 @@
   "files": [
     "dist",
     "templates",
-    "skills"
+    "skills",
+    "hooks",
+    ".claude-plugin"
   ],
   "keywords": [
     "claude",
     "claude-code",
-    "ai",
+    "codex",
+    "copilot",
+    "cursor",
+    "agent-skills",
+    "skills",
     "loop",
     "critic",
-    "code-review"
+    "code-review",
+    "adversarial-review",
+    "definition-of-done",
+    "stop-hook"
   ],
   "repository": {
     "type": "git",

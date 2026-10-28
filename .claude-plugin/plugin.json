@@ -1,0 +1,33 @@
+{
+  "name": "arbiter",
+  "version": "0.2.0",
+  "description": "Adversarial code review and a definition-of-done loop for AI-generated code. Seven skills: five review personas (spec drift, edge cases, security, hallucinated APIs, tautological tests), a critic that runs them in parallel, and a loop that verifies done-criteria before stopping. The Stop hook enforces the loop.",
+  "author": {
+    "name": "Dustin Fox",
+    "url": "https://github.com/dustinfox-code"
+  },
+  "homepage": "https://github.com/dustinfox-code/arbiter#readme",
+  "repository": "https://github.com/dustinfox-code/arbiter",
+  "license": "MIT",
+  "keywords": [
+    "code-review",
+    "adversarial-review",
+    "definition-of-done",
+    "loop",
+    "stop-hook",
+    "spec-drift",
+    "edge-cases",
+    "security",
+    "hallucinated-api",
+    "test-quality"
+  ],
+  "skills": [
+    "./skills/spec-drift-review",
+    "./skills/edge-case-review",
+    "./skills/ai-code-security-review",
+    "./skills/hallucinated-api-review",
+    "./skills/tautological-test-review",
+    "./skills/critic",
+    "./skills/loop"
+  ]
+}

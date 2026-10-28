@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx arbiter-cc check",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}
