@@ -20,6 +20,14 @@ export class TaskContextManager {
     return this.taskFilePath
   }
 
+  /**
+   * Path of the lock file that serialises concurrent stop-hook evaluations.
+   * Lives next to the task file so it is cleaned up with `task clear`.
+   */
+  async lockPath(): Promise<string> {
+    return (await this.getTaskFilePath()) + '.lock'
+  }
+
   async exists(): Promise<boolean> {
     const filePath = await this.getTaskFilePath()
     try {
@@ -98,11 +106,13 @@ export class TaskContextManager {
 
   async clear(): Promise<void> {
     const filePath = await this.getTaskFilePath()
-    try {
-      await unlink(filePath)
-    } catch (err: unknown) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw err
+    for (const target of [filePath, filePath + '.lock']) {
+      try {
+        await unlink(target)
+      } catch (err: unknown) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+          throw err
+        }
       }
     }
   }

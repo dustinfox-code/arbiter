@@ -2,6 +2,10 @@
 export { TaskContextManager } from './core/task-manager.js'
 export { CheckpointManager } from './core/checkpoint-manager.js'
 export { HookInterface, runHook } from './core/hook.js'
+export type { HookRunOptions } from './core/hook.js'
+export { emitForAgent, parseAgentId, AGENT_IDS } from './core/agents.js'
+export type { AgentId, HookEmission } from './core/agents.js'
+export { acquireStopLock, matchesLastStop } from './core/stop-lock.js'
 export { CriteriaEvaluator } from './loop/evaluator.js'
 export { loadConfig } from './core/config.js'
 export { pooled } from './core/pool.js'
@@ -26,5 +30,7 @@ export {
   type ReviewResult,
   type Finding,
   type ClaudeStopPayload,
+  type StopPayload,
+  type LastStopRecord,
   type HookResult,
 } from './core/types.js'

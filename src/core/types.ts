@@ -69,14 +69,24 @@ export interface Finding {
   suggestion?: string      // Concrete fix, not just a flag
 }
 
-// What Claude Code sends to stop hooks via stdin
-export interface ClaudeStopPayload {
+// What the host agent sends to the stop hook via stdin. Field names follow
+// Claude Code's Stop event; Codex and Copilot send the same core fields.
+// Every field except session_id is optional so a hand-run `arbiter-cc check`
+// (empty stdin) and other agents' payloads both parse.
+export interface StopPayload {
   session_id: string
-  transcript_path: string
-  cwd: string
-  hook_event_name: 'Stop'
-  stop_hook_active: boolean
+  transcript_path?: string
+  cwd?: string
+  hook_event_name?: string
+  stop_hook_active?: boolean      // true when the agent is already continuing because of a stop hook
+  prompt_id?: string              // identifies the user turn; used to make `check` idempotent per stop
+  permission_mode?: string
+  last_assistant_message?: string
+  [key: string]: unknown
 }
+
+/** @deprecated Use StopPayload. Kept for 0.1.x API compatibility. */
+export type ClaudeStopPayload = StopPayload
 
 // The hook's decision after evaluation
 export interface HookResult {
@@ -84,8 +94,21 @@ export interface HookResult {
   iteration: number
   passedCriteria: string[]
   failedCriteria: string[]
-  feedback?: string        // Written to stdout — becomes Claude's re-entry context
-  summary: string          // Written to stderr — visible in Claude Code logs
+  feedback?: string        // Delivered to the agent as the block reason — becomes its re-entry context
+  summary: string          // Written to stderr — visible in the agent's logs
+  replayed?: boolean       // true when this result was served from the last-stop cache, not re-evaluated
+}
+
+// What `check` remembers about the last stop event it evaluated, stored in
+// task.metadata.lastStop. A second hook process for the same stop (two hooks
+// wired for one event, or a retry) replays this instead of re-evaluating,
+// so one stop never burns two iterations.
+export interface LastStopRecord {
+  sessionId: string
+  promptId?: string
+  at: string               // ISO 8601
+  stopHookActive?: boolean
+  result: HookResult
 }
 
 // A user-defined critic persona loaded from config
