@@ -4,6 +4,7 @@ dist/
 *.tgz
 .arbiter/checkpoints/
 .arbiter/task.json
+.arbiter/task.json.lock
 .env
 .env.*
 .DS_Store
