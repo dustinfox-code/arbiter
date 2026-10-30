@@ -9,6 +9,8 @@ import { runHook } from './core/hook.js'
 import { DEFAULT_CONFIG } from './core/types.js'
 import type { CompletionCriteria } from './core/types.js'
 import { runCritic } from './critic/runner.js'
+import { parseAgentId, AGENT_IDS, AGENT_INFO, type AgentId } from './core/agents.js'
+import { wireAgentHook, wireDetectedAgents, type WireResult } from './core/agent-config.js'
 
 // ── Argument parsing ──────────────────────────────────────────────
 
@@ -42,7 +44,18 @@ function parseArgs(argv: string[]): ParsedArgs {
 
 // ── Commands ──────────────────────────────────────────────────────
 
-async function handleInit(cwd: string): Promise<void> {
+function printWireResults(results: WireResult[]): void {
+  for (const r of results) {
+    console.log(r.message)
+    if (r.snippet) {
+      console.log('')
+      console.log(r.snippet)
+      console.log('')
+    }
+  }
+}
+
+async function handleInit(cwd: string, args: ParsedArgs): Promise<void> {
   // 1. Create .arbiter/ directory
   const arbiterDir = join(cwd, '.arbiter')
   await mkdir(arbiterDir, { recursive: true })
@@ -57,55 +70,14 @@ async function handleInit(cwd: string): Promise<void> {
     console.log('Created .arbiter/config.json')
   }
 
-  // 3. Wire stop hook into .claude/settings.json
-  const claudeDir = join(cwd, '.claude')
-  await mkdir(claudeDir, { recursive: true })
-  const settingsPath = join(claudeDir, 'settings.json')
-
-  let settings: Record<string, unknown> = {}
-  try {
-    const raw = await readFile(settingsPath, 'utf-8')
-    settings = JSON.parse(raw) as Record<string, unknown>
-  } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      console.error(`Warning: Could not parse ${settingsPath} — creating new file`)
-    }
-  }
-
-  // Ensure hooks.Stop structure exists
-  if (!settings.hooks || typeof settings.hooks !== 'object') {
-    settings.hooks = {}
-  }
-  const hooks = settings.hooks as Record<string, unknown>
-  if (!Array.isArray(hooks.Stop)) {
-    hooks.Stop = []
-  }
-  const stopHooks = hooks.Stop as Array<Record<string, unknown>>
-
-  // Check if arbiter hook already present
-  const alreadyWired = stopHooks.some((entry) => {
-    const innerHooks = entry.hooks
-    if (!Array.isArray(innerHooks)) return false
-    return innerHooks.some((h: Record<string, unknown>) =>
-      typeof h.command === 'string' && h.command.includes('arbiter-cc'),
-    )
-  })
-
-  if (alreadyWired) {
-    console.log('Stop hook already wired in .claude/settings.json — skipping')
+  // 3. Wire the stop hook. Default: Claude Code. --agent <id> for one agent,
+  //    --agent all for every agent whose config directory already exists.
+  const agentFlag = args.flags.agent
+  if (agentFlag === 'all') {
+    printWireResults(await wireDetectedAgents(cwd))
   } else {
-    stopHooks.push({
-      matcher: '',
-      hooks: [
-        {
-          type: 'command',
-          command: 'npx arbiter-cc check',
-          timeout: 120,
-        },
-      ],
-    })
-    await writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf-8')
-    console.log('Wired stop hook into .claude/settings.json')
+    const agent: AgentId = agentFlag === undefined ? 'claude' : parseAgentId(agentFlag)
+    printWireResults([await wireAgentHook(cwd, agent)])
   }
 
   // 4. Append to .gitignore if it exists
@@ -120,11 +92,8 @@ async function handleInit(cwd: string): Promise<void> {
 
     if (content) {
       const lines: string[] = []
-      if (!content.includes('.arbiter/checkpoints/')) {
-        lines.push('.arbiter/checkpoints/')
-      }
-      if (!content.includes('.arbiter/task.json')) {
-        lines.push('.arbiter/task.json')
+      for (const entry of ['.arbiter/checkpoints/', '.arbiter/task.json', '.arbiter/task.json.lock']) {
+        if (!content.includes(entry)) lines.push(entry)
       }
       if (lines.length > 0) {
         const suffix = content.endsWith('\n') ? '' : '\n'
@@ -139,7 +108,7 @@ async function handleInit(cwd: string): Promise<void> {
   }
 
   // 5. Print CLAUDE.md snippet
-  console.log('\n── Add this to your CLAUDE.md ──────────────────────────\n')
+  console.log('\n── Add this to your CLAUDE.md (or AGENTS.md) ──────────────\n')
   console.log(`## Arbiter
 
 This project uses Arbiter to enforce task completion before stopping.
@@ -235,6 +204,12 @@ async function handleTaskStatus(cwd: string): Promise<void> {
   console.log(`  Created: ${task.createdAt}`)
   console.log(`  Updated: ${task.updatedAt}`)
 
+  const loopPasses = Array.isArray(task.metadata?.loopPasses) ? (task.metadata.loopPasses as Array<Record<string, unknown>>) : []
+  if (loopPasses.length > 0) {
+    const last = loopPasses[loopPasses.length - 1]
+    console.log(`  Loop skill passes: ${loopPasses.length}/${task.maxIterations} (last: ${String(last.at ?? '')})`)
+  }
+
   if (task.checkpoints.length > 0) {
     const last = task.checkpoints[task.checkpoints.length - 1]
     console.log(`\n  Last checkpoint (iteration ${last.iteration}):`)
@@ -256,8 +231,9 @@ async function handleTaskClear(cwd: string): Promise<void> {
   console.log('Task cleared.')
 }
 
-async function handleCheck(cwd: string): Promise<void> {
-  await runHook({ cwd })
+async function handleCheck(cwd: string, args: ParsedArgs): Promise<void> {
+  const agent: AgentId = args.flags.agent === undefined ? 'claude' : parseAgentId(args.flags.agent)
+  await runHook({ cwd, agent })
 }
 
 async function handleCheckpoints(cwd: string, args: ParsedArgs): Promise<void> {
@@ -429,7 +405,7 @@ async function main(): Promise<void> {
 
   switch (command) {
     case 'init':
-      await handleInit(cwd)
+      await handleInit(cwd, { positional: rest, flags })
       break
 
     case 'task':
@@ -453,7 +429,7 @@ async function main(): Promise<void> {
       break
 
     case 'check':
-      await handleCheck(cwd)
+      await handleCheck(cwd, { positional: rest, flags })
       break
 
     case 'checkpoints':
@@ -468,21 +444,25 @@ async function main(): Promise<void> {
       console.log(`arbiter-cc — Loop agent and critic for Claude Code
 
 Commands:
-  init                          Initialize Arbiter in the current project
+  init [--agent <id|all>]       Initialize Arbiter and wire the stop hook (default agent: claude)
   task start "<description>"    Start a new task with default criteria
   task status                   Show current task state
   task clear                    Remove the active task
-  check                         Manually trigger stop hook evaluation
+  check [--agent <id>]          Evaluate the stop hook (stdin payload optional)
   checkpoints                   List all checkpoints
   checkpoints --restore <id>    Restore to a checkpoint
   review                        Run adversarial critic review
 
 Flags:
+  --agent <id>                  One of: ${AGENT_IDS.join(', ')}; or "all" with init
   --max-iterations <n>          Max loop iterations (default: 5)
   --force                       Force task start, replacing existing task
   --personas <list>             Comma-separated personas for review
   --files <list|git-diff|all>   Files to review (default: git-diff)
-  --all                         Review all project files (shorthand for --files all)`)
+  --all                         Review all project files (shorthand for --files all)
+
+Agents:
+${AGENT_IDS.map(id => `  ${id.padEnd(8)} ${AGENT_INFO[id].label} (${AGENT_INFO[id].event}${AGENT_INFO[id].verified ? ', verified' : ', per docs'})`).join('\n')}`)
       if (command) {
         process.exitCode = 1
       }

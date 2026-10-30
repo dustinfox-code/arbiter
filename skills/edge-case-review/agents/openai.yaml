@@ -1,0 +1,3 @@
+interface:
+  display_name: "Edge Case Review"
+  short_description: "Seven-category check for inputs and states that break at runtime"

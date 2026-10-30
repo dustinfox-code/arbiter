@@ -1,288 +1,202 @@
-# arbiter-cc
+# Arbiter
 
-Arbiter intercepts Claude Code's stop signal and evaluates whether the task is actually done before letting the session end. If criteria aren't met, it sends Claude back to work with structured feedback about what's still failing.
+Adversarial code review and a definition-of-done loop for AI coding agents.
 
-## Quick Start
+Arbiter is two ideas. The **critic** runs five independent reviewers, each in a fresh context, each hunting one failure mode AI-generated code is prone to: spec drift, missed edge cases, security holes, hallucinated APIs, and tests that cannot fail. The **loop** writes down what "done" means before the work starts, then verifies every criterion, fixes, and re-verifies until all pass or the budget runs out. The stop hook turns the loop from advice into enforcement: the agent cannot end its turn while a required criterion fails.
+
+You can have it three ways, and they share one set of files:
+
+| Route | What you get | Where it works |
+|---|---|---|
+| **Claude Code plugin** | Seven skills under `/arbiter:` plus the Stop hook, zero config | Claude Code |
+| **Skills** | The seven `SKILL.md` files, pure markdown, no runtime | Claude Code, Codex, Copilot CLI, Cursor, anything that reads the SKILL.md standard |
+| **CLI (`arbiter-cc`)** | The stop hook for five agents, the API-driven critic, checkpoints | Claude Code, Codex, Copilot CLI, Cursor, Gemini/Antigravity |
+
+## Install
+
+### Claude Code plugin
+
+```
+/plugin install arbiter --marketplace dustinfox-code/arbiter
+```
+
+Or in two steps: `claude plugin marketplace add dustinfox-code/arbiter`, then `claude plugin install arbiter@arbiter`. The plugin's hook runs `npx arbiter-cc check`, so Node 18+ is needed; the first run downloads the package.
+
+### Skills anywhere
+
+- **skills.sh:** `npx skills add dustinfox-code/arbiter` copies the skills into your project for whichever agents you use.
+- **Agensi:** each skill is listed free on [agensi.io](https://www.agensi.io) and loads through their MCP connector.
+- **By hand:** copy any folder under `skills/` into your agent's skills directory. Each is self-contained.
+
+### CLI, for enforcement in any agent
 
 ```bash
-npx arbiter-cc init                              # wire stop hook + create .arbiter/
-npx arbiter-cc task start "add user login endpoint"  # register a task
-# start Claude Code — Arbiter fires automatically when Claude tries to stop
+npx arbiter-cc init                  # wires the Stop hook for Claude Code
+npx arbiter-cc init --agent codex    # or copilot, cursor, gemini
+npx arbiter-cc init --agent all      # every agent whose config directory already exists
 ```
 
-That's it. `init` configures the Claude Code stop hook and creates `.arbiter/config.json` with defaults. `task start` registers a task with two default criteria: `tests-pass` and `no-ts-errors`. When Claude tries to stop, Arbiter evaluates the criteria and either allows the stop or sends Claude back.
+## The skills
 
-To customize criteria before starting Claude, edit `.arbiter/task.json`:
+| Skill | What it does |
+|---|---|
+| `spec-drift-review` | Measures the code against the task it was meant to implement: unmet requirements, placeholder code, scope creep, interface drift. |
+| `edge-case-review` | Seven categories that break at runtime: collection bounds, null paths, unhandled rejections, unvalidated boundary types, off-by-one, swallowed errors, leaked handles. |
+| `ai-code-security-review` | Injection, path traversal, hardcoded secrets, unsafe eval and deserialization, untrusted input, insecure defaults. Every finding names the input, the sink and the consequence. |
+| `hallucinated-api-review` | Confirms every package, export, method, option and type exists, by reading the manifest and installed type declarations rather than from memory. |
+| `tautological-test-review` | Finds tests that pass whether or not the code is right: tautologies, mocked units under test, weak assertions, uncovered requirements, brittle coupling. |
+| `critic` | Runs the five above in parallel subagents and reports them side by side. Report-only unless you pass `fix`. |
+| `loop` | Captures the task, proposes criteria from your stack, writes `.arbiter/task.json`, and verifies before declaring done. The advisory half of the loop. |
+
+Every review skill takes an optional `fix` argument. Without it the report is the deliverable. With it the skill applies the error-severity fixes, re-runs its checklist once, and says what changed, always within the permissions your session already grants.
+
+Each persona's checklist lives between `<!-- arbiter:persona:start -->` and `<!-- arbiter:persona:end -->` in its `SKILL.md`. The CLI critic loads the same text as its API system prompt, so the skill and the CLI cannot drift.
+
+## The loop
+
+```
+Agent tries to stop
+    │
+    ▼
+arbiter-cc check reads .arbiter/task.json
+    │
+    ├── no task?                → allow stop
+    ├── task complete/failed?   → allow stop
+    ├── same stop already answered (parallel hooks)? → replay the answer
+    ├── iteration >= max?       → mark failed, allow stop
+    │
+    ▼
+Run all criteria (tests, tsc, commands, critic, …)
+    │
+    ├── all required pass → mark complete, allow stop
+    │
+    └── any required fail → {"decision":"block","reason":<what failed and why>}
+                            the agent re-enters with the reason as its next prompt
+```
+
+Exit codes: `0` always, with the block decision as JSON on stdout when the agent has to continue; `1` only when Arbiter itself failed, which every agent treats as a non-blocking hook error so a broken Arbiter can never trap a session.
+
+Each iteration writes a checkpoint to `.arbiter/checkpoints/` with the pass/fail state and git hash. After `maxIterations` (default 5) the task is marked failed and the stop is allowed.
+
+### Start a task
 
 ```bash
-npx arbiter-cc check    # dry-run: trigger the hook manually to test your setup
+npx arbiter-cc task start "add user login endpoint"   # default criteria: tests-pass, no-ts-errors
+npx arbiter-cc task status
+npx arbiter-cc check                                   # dry run of the hook, no payload
 ```
 
-## How the Loop Works
+Or use the `loop` skill, which proposes criteria from your project and writes the same file.
 
-```
-Claude tries to stop
-    │
-    ▼
-Arbiter reads .arbiter/task.json
-    │
-    ├── no task?           → exit 0 (allow stop)
-    ├── task complete/failed? → exit 0 (allow stop)
-    ├── iteration >= max?  → mark failed, exit 0
-    │
-    ▼
-Run all criteria (tests, tsc, custom commands, etc.)
-    │
-    ├── all required pass  → mark complete, exit 0
-    │
-    └── any required fail  → write feedback to stdout, exit 2 (loop)
-```
+## Enforcement across agents
 
-**Exit codes:**
-- `0` — stop allowed (task complete, failed, or no task)
-- `2` — Claude re-enters with feedback injected as context
-- `1` — internal Arbiter error
+The hook speaks each agent's dialect. `check --agent <id>` chooses the output; `init --agent <id>` writes the registration.
 
-Each iteration saves a checkpoint to `.arbiter/checkpoints/` with the pass/fail state and git hash. The loop runs up to `maxIterations` times (default: 5), then marks the task failed and lets Claude stop.
+| Agent | Event | Config written by `init` | Continuation | Status |
+|---|---|---|---|---|
+| Claude Code | `Stop` | `.claude/settings.json` (or the plugin) | `{"decision":"block","reason"}` | Verified end to end |
+| Codex CLI | `Stop` | `.codex/hooks.json` | same | Per docs. Project hooks run after you trust them with `/hooks` in Codex |
+| GitHub Copilot CLI | `agentStop` | `.github/hooks/arbiter.json` | same | Per docs |
+| Cursor | `stop` | `.cursor/hooks.json` | `{"followup_message"}` | Per docs. Cursor caps stop-hook loops at 5 per script by default |
+| Gemini CLI / Antigravity | `AfterAgent` | printed, not written | `{"decision":"deny","reason"}` | Per docs. Gemini CLI was retired in June 2026; Antigravity's hook file location is unconfirmed |
 
-## Completion Criteria Types
+"Per docs" means the adapter follows the agent's published hook contract and has not yet been run against the real agent by a maintainer. Field-name differences on stdin (`sessionId`, `conversation_id`, `generation_id`, `turn_id`, `workspace_roots`) are normalised regardless of the flag.
 
-Edit the `criteria` array in `.arbiter/task.json` to control what Arbiter checks. Each entry needs an `id`, `type`, `description`, `required` (boolean), and `config` object.
+Two hooks for one stop, for example the plugin's and one from `init`, are serialised with a lock and the second replays the first's decision, so one stop never costs two iterations.
+
+## Completion criteria types
+
+Edit the `criteria` array in `.arbiter/task.json`. Each entry has `id`, `type`, `description`, `required`, and `config`.
 
 | Type | What it does | Config |
 |------|-------------|--------|
-| `tests-pass` | Run test suite, pass if exit 0 | `{ "command": "npm test" }` |
+| `tests-pass` | Run the test suite, pass on exit 0 | `{ "command": "npm test" }` |
 | `no-ts-errors` | Run `tsc --noEmit` | `{ "tsconfigPath": "tsconfig.json" }` |
-| `command` | Run any shell command, pass if exit 0 | `{ "command": "npm run lint" }` |
+| `command` | Run any shell command, pass on exit 0 | `{ "command": "npm run lint" }` |
 | `file-exists` | Check a file exists (path-traversal safe) | `{ "path": "src/auth.ts" }` |
-| `llm` | Call Anthropic API with prompt + file context | `{ "prompt": "...", "files": ["src/auth.ts"], "model": "...", "timeout": 30000 }` |
-| `critic` | Run adversarial review personas | `{ "personas": ["correctness", "security"], "files": "git-diff" }` |
+| `llm` | Ask the Anthropic API a yes/no question about files | `{ "prompt": "...", "files": ["src/auth.ts"], "model": "...", "timeout": 30000 }` |
+| `critic` | Run review personas via the API | `{ "personas": ["spec-drift-review", "ai-code-security-review"], "files": "git-diff" }` |
 | `custom` | Load a JS module as evaluator | `{ "path": "my-evaluator.mjs" }` |
 
-### Example: full criteria array
+`"required": false` makes a criterion advisory: reported, never blocking. `llm` and `critic` need `ANTHROPIC_API_KEY`. A `custom` module exports `async (criteria, payload, cwd) => ({ passed, feedback })` and runs unsandboxed with a 30-second timeout.
 
-```json
-{
-  "criteria": [
-    {
-      "id": "tests-pass",
-      "type": "tests-pass",
-      "description": "All tests pass",
-      "required": true,
-      "config": { "command": "npm test" }
-    },
-    {
-      "id": "no-ts-errors",
-      "type": "no-ts-errors",
-      "description": "No TypeScript compilation errors",
-      "required": true,
-      "config": {}
-    },
-    {
-      "id": "lint-clean",
-      "type": "command",
-      "description": "ESLint passes with no errors",
-      "required": false,
-      "config": { "command": "npx eslint src/ --max-warnings 0" }
-    },
-    {
-      "id": "critic-review",
-      "type": "critic",
-      "description": "Adversarial review passes",
-      "required": true,
-      "config": { "personas": ["correctness", "security"], "files": "git-diff" }
-    }
-  ]
-}
-```
-
-Set `"required": false` to make a criterion advisory-only (warnings reported but don't block completion).
-
-### `llm` criteria
-
-The LLM evaluator sends your prompt plus file contents to the Anthropic API and expects a `{ "passed": boolean, "feedback": "..." }` JSON response. Set `"files": "git-diff"` to automatically include changed files.
-
-```json
-{
-  "id": "docs-updated",
-  "type": "llm",
-  "description": "README reflects the new API",
-  "required": false,
-  "config": {
-    "prompt": "Check if the README documents all exported functions. Return passed=false if any are missing.",
-    "files": ["README.md", "src/index.ts"]
-  }
-}
-```
-
-Requires `ANTHROPIC_API_KEY` in the environment.
-
-### `custom` criteria
-
-Export a default async function from a `.mjs` file:
-
-```javascript
-// my-evaluator.mjs
-export default async function(criteria, payload, cwd) {
-  // do your checks
-  return { passed: true, feedback: null }
-  // or: { passed: false, feedback: "What went wrong" }
-}
-```
-
-```json
-{
-  "id": "my-check",
-  "type": "custom",
-  "description": "Custom project check",
-  "required": true,
-  "config": { "path": "my-evaluator.mjs" }
-}
-```
-
-## The Critic
-
-The critic runs adversarial LLM-powered personas that review code for AI-specific failure modes. Each persona is a focused system prompt that receives your code and task description, returning structured findings.
-
-### Built-in personas
-
-| Persona | What it catches |
-|---------|----------------|
-| `correctness` | Spec drift, incomplete features, TODOs, mismatched signatures |
-| `edge-cases` | Missing null checks, unhandled rejections, off-by-one, resource leaks |
-| `security` | Injection, path traversal, hardcoded secrets, unsafe eval |
-| `hallucinations` | Imports that don't exist in package.json, fake API methods |
-| `test-quality` | Tautological tests, missing assertions, tests that can't fail |
-
-### Run standalone
+## The critic from the CLI
 
 ```bash
-# Review git-diff files with default personas (correctness, edge-cases, security)
-npx arbiter-cc review
-
-# Pick specific personas
-npx arbiter-cc review --personas correctness,hallucinations
-
-# Review specific files
+npx arbiter-cc review                                              # git-diff files, default personas
+npx arbiter-cc review --personas hallucinated-api-review,tautological-test-review
 npx arbiter-cc review --files src/auth.ts,src/api.ts
-
-# Review all project files
 npx arbiter-cc review --all
 ```
 
-The review command uses the active task description for context (if one exists). Exits non-zero if any errors are found.
-
-### Add as a loop criterion
-
-Add a `critic` type entry to your task criteria:
-
-```json
-{
-  "id": "critic-review",
-  "type": "critic",
-  "description": "Adversarial review finds no errors",
-  "required": true,
-  "config": {
-    "personas": ["correctness", "security", "hallucinations"],
-    "files": "git-diff"
-  }
-}
-```
-
-If `config.personas` is omitted, it falls back to the personas listed in `.arbiter/config.json`.
-
-### Custom personas
-
-Define custom personas in `.arbiter/config.json`:
+Persona ids are the skill names. The 0.1 ids (`correctness`, `edge-cases`, `security`, `hallucinations`, `test-quality`) still work as aliases. Custom personas in `.arbiter/config.json` override built-ins by id:
 
 ```json
 {
   "critic": {
-    "personas": ["correctness", "security", "api-contracts"],
+    "personas": ["spec-drift-review", "api-contracts"],
     "customPersonas": [
-      {
-        "id": "api-contracts",
-        "description": "Verify API request/response schemas match the spec",
-        "systemPrompt": "You are reviewing code for API contract violations..."
-      }
+      { "id": "api-contracts", "description": "Request/response schemas match the spec", "systemPrompt": "You are reviewing..." }
     ]
   }
 }
 ```
 
-Custom personas with the same `id` as a built-in persona override it.
+## Configuration
 
-## Configuration Reference
-
-`.arbiter/config.json` — all fields optional, shown with defaults:
+`.arbiter/config.json`, all fields optional, shown with defaults:
 
 ```json
 {
   "maxIterations": 5,
   "checkpointDir": ".arbiter/checkpoints",
   "taskFile": ".arbiter/task.json",
-  "llmModel": "claude-sonnet-4-20250514",
+  "llmModel": "claude-sonnet-5-5",
   "critic": {
     "enabled": false,
-    "personas": ["correctness", "edge-cases", "security"],
+    "personas": ["spec-drift-review", "edge-case-review", "ai-code-security-review"],
     "failOnWarnings": false,
     "customPersonas": []
   }
 }
 ```
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `maxIterations` | number | `5` | Max loop iterations before task is marked failed |
-| `checkpointDir` | string | `".arbiter/checkpoints"` | Where checkpoint JSON files are stored |
-| `taskFile` | string | `".arbiter/task.json"` | Path to the active task file |
-| `llmModel` | string | `"claude-sonnet-4-20250514"` | Model used for `llm` and `critic` evaluators |
-| `critic.enabled` | boolean | `false` | Whether critic runs as part of the loop (when using critic criteria type, this is separate) |
-| `critic.personas` | string[] | `["correctness", "edge-cases", "security"]` | Default personas for critic evaluations |
-| `critic.failOnWarnings` | boolean | `false` | If true, warnings (not just errors) cause critic to fail |
-| `critic.customPersonas` | array | `[]` | Custom persona definitions (see above) |
-
-Missing config file = all defaults. Partial config = deep-merged with defaults.
-
-## CLI Reference
+## CLI reference
 
 ```
-arbiter-cc init                          Initialize Arbiter in the current project
-arbiter-cc task start "<description>"    Start a task (default criteria: tests-pass, no-ts-errors)
-arbiter-cc task status                   Show current task state and last checkpoint
-arbiter-cc task clear                    Remove the active task
-arbiter-cc check                         Manually trigger stop hook evaluation
-arbiter-cc checkpoints                   List all checkpoints
-arbiter-cc checkpoints --restore <id>    Restore to a checkpoint via git checkout
-arbiter-cc review                        Run standalone critic review
+arbiter-cc init [--agent <id|all>]      Create .arbiter/ and wire the stop hook (default: claude)
+arbiter-cc task start "<description>"   Start a task (default criteria: tests-pass, no-ts-errors)
+arbiter-cc task status                  Show task state and the last checkpoint
+arbiter-cc task clear                   Remove the active task
+arbiter-cc check [--agent <id>]         Evaluate the stop hook (reads the agent's payload on stdin)
+arbiter-cc checkpoints                  List checkpoints
+arbiter-cc checkpoints --restore <id>   git checkout the checkpoint's commit
+arbiter-cc review                       Run the critic
 ```
 
-**Flags:**
-- `--max-iterations <n>` — Override max iterations on task start (default: 5)
-- `--force` — Replace an existing task without clearing first
-- `--personas <list>` — Comma-separated persona IDs for review
-- `--files <list|git-diff|all>` — Files to review (default: git-diff)
-- `--all` — Shorthand for `--files all`
+Flags: `--agent`, `--max-iterations <n>`, `--force`, `--personas <list>`, `--files <list|git-diff|all>`, `--all`.
 
-## Known Limitations (v0.1)
+## Known limitations
 
-**No task editing.** You can't add or remove criteria from a running task via the CLI. Edit `.arbiter/task.json` directly. If you break the JSON, Arbiter will error on the next stop hook.
+- **Task editing** is by hand: edit `.arbiter/task.json`. Malformed JSON fails the next check with exit 1, which lets the agent stop.
+- **Test output parsing** is heuristic for `tests-pass`; unusual runners give thinner feedback.
+- **File size:** files over 1 MB are skipped; critic context is capped at ~500 lines per file and ~100k characters total.
+- **`git-diff` reviews nothing on a clean tree.** The skills fall back to the last commit; the CLI does not yet.
+- **`npx` first run** downloads the package, inside the hook's 120-second timeout.
+- **Unverified adapters:** see the table above. Reports from anyone who runs one are welcome.
+- **No atomic task state:** a process kill mid-evaluation can leave `task.json` inconsistent. `task clear` and start again.
 
-**Test output parsing is heuristic.** The `tests-pass` evaluator extracts failure context using regex pattern matching (looks for "FAIL", "Error:", "AssertionError" near failure lines). Non-standard test output formats may produce poor feedback.
+## Development
 
-**File size limits.** Files over 1 MB are skipped. Critic context is capped at ~500 lines per file. Large files may be truncated or excluded from review.
+```bash
+npm test                   # no network needed
+npm run build
+npm run package:skills     # dist/skills/*.zip and *.listing.md for Agensi
+npm run check:version      # plugin.json version matches package.json
+claude plugin validate . --strict
+```
 
-**Git-diff default can review nothing.** Both the critic and `files: "git-diff"` resolve changed files via `git diff --name-only HEAD`. If there are no uncommitted changes (e.g., everything was committed), the file list is empty and the review is a no-op.
-
-**LLM/critic require `ANTHROPIC_API_KEY`.** Not checked at init time — you'll get a failure at evaluation time if it's missing.
-
-**Custom evaluators are unsandboxed.** The `custom` evaluator type runs your JS module with full filesystem and network access. The only guardrail is a 30-second timeout.
-
-**No atomic task state.** Task status, checkpoint writes, and task updates are separate file operations. A process kill mid-loop could leave `.arbiter/task.json` in an inconsistent state. Run `arbiter-cc task clear` and start over if this happens.
-
-**Iteration limit is a hard stop.** When `maxIterations` is reached, the task is marked `failed` and cannot be resumed. You must `task clear` and `task start` again.
-
-**Single dependency.** Requires `@anthropic-ai/sdk` (^0.52.0). Node >= 18.
+Releases bump `package.json`; `npm version` syncs `.claude-plugin/plugin.json`. The human-only release steps are in [docs/HUMAN-STEPS.md](docs/HUMAN-STEPS.md).
 
 ## License
 

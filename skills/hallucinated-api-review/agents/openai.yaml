@@ -1,0 +1,3 @@
+interface:
+  display_name: "Hallucinated API Review"
+  short_description: "Confirm every import, method and option exists against installed declarations"

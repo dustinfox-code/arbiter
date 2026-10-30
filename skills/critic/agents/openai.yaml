@@ -1,0 +1,3 @@
+interface:
+  display_name: "Arbiter Critic"
+  short_description: "Five adversarial reviewers in parallel, one aggregate verdict"

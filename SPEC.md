@@ -180,14 +180,13 @@ Behavior:
 6. Run all criteria via the evaluator
 7. Write a checkpoint
 8. If all required criteria pass: mark task `complete`, write success summary to stderr, exit 0
-9. If any required criteria fail: build feedback prompt, write to stdout, exit 2
+9. If any required criteria fail: build feedback prompt, emit it as the agent's block decision on stdout, exit 0
 
-Exit codes:
-- `0` — Claude Code accepts the stop
-- `2` — Claude Code re-enters the session with stdout injected as context
-- `1` — Arbiter itself failed (parse error, unrecoverable internal error)
+Exit codes (revised in 0.2.0; see Phase 3):
+- `0` — always. When criteria fail, stdout carries `{"decision":"block","reason":<feedback>}` and the agent re-enters with the reason as its prompt. On exit 2 the agents feed *stderr* to the model, so 0.1's stdout feedback was never seen.
+- `1` — Arbiter itself failed (parse error, unrecoverable internal error). Agents treat this as non-blocking.
 
-Feedback prompt format (written to stdout on exit 2):
+Feedback prompt format (the block decision's `reason`, on stdout, exit 0):
 - Must include: current iteration / max, which criteria passed, which failed, and the specific feedback string from each failing criterion
 - Must end with a clear instruction to Claude to fix the failing criteria and not stop until they pass
 - Should be structured (markdown is fine, Claude Code renders it)
@@ -244,10 +243,10 @@ interface ArbiterConfig {
   maxIterations: number           // Default: 5
   checkpointDir: string           // Default: .arbiter/checkpoints
   taskFile: string                // Default: .arbiter/task.json
-  llmModel: string                // Default: claude-sonnet-4-20250514
+  llmModel: string                // Default: claude-sonnet-5-5 (0.2.0)
   critic: {
     enabled: boolean              // Default: false (Phase 2)
-    personas: string[]            // Default: ["correctness", "edge-cases", "security"]
+    personas: string[]            // Default: ["spec-drift-review", "edge-case-review", "ai-code-security-review"] (0.2.0; 0.1 ids remain aliases)
     failOnWarnings: boolean       // Default: false
   }
 }
@@ -417,3 +416,27 @@ These are intentionally left to Claude Code's judgment:
 - `arbiter checkpoints` lists checkpoints with accurate pass/fail counts
 - The programmatic API imports correctly from the package root
 - No external runtime dependencies beyond `@anthropic-ai/sdk`
+
+---
+
+## Phase 3 — Skills and plugin (0.2.0)
+
+Decided 2026-10-28 after a marketplace (Agensi.io) asked to list Arbiter's skills, which revealed the package had none: it was a CLI and a hook. Goal: distribution first, every listing free, pricing revisited only on traction.
+
+### What ships
+
+- **Seven pure-markdown skills in `skills/`.** Five personas (`spec-drift-review`, `edge-case-review`, `ai-code-security-review`, `hallucinated-api-review`, `tautological-test-review`), the `critic` orchestrator, and the `loop` definition-of-done skill. Each `SKILL.md` is self-contained: scope resolution, a numbered must-answer-every-category checklist, the findings format, and an opt-in `fix` argument. All are model-invoked with trigger-rich descriptions; none has a `scripts/` folder or an install instruction, which is what Agensi's security scan rejects. Each carries `agents/openai.yaml` for Codex's picker and the personas carry `context: fork` so Claude Code runs them in a fresh context.
+- **One source of truth for persona prompts.** The checklist sits between `<!-- arbiter:persona:start/end -->` markers; `getBuiltInPersonas()` extracts it as the API system prompt. There is no generated `agents/` directory: `critic` reaches personas by calling the Skill tool, and `context: fork` already isolates them.
+- **A Claude Code plugin.** `.claude-plugin/plugin.json` lists the skills; `hooks/hooks.json` wires the Stop hook to `npx arbiter-cc check`; `.claude-plugin/marketplace.json` makes the repo its own marketplace. Codex and Copilot CLI also read this manifest. `plugin.json` version tracks `package.json` via `scripts/sync-plugin-version.mjs`.
+- **Portable enforcement.** Every major agent has a stop-style hook that can send the agent back with a reason: Claude Code, Codex and Copilot share `{"decision":"block","reason"}`; Gemini uses `deny`; Cursor uses `{"followup_message"}`. `check --agent` emits the right one and `init --agent` writes the right config file. Adapters are labelled verified only after a maintainer runs them against the real agent.
+- **Agensi packaging.** `npm run package:skills` zips each skill with one top-level folder named after its slug. `loop` and `critic` become `arbiter-loop` and `arbiter-critic` on the way out, with cross-references rewritten, because the plugin namespaces them as `/arbiter:loop` and `/arbiter:critic` while a marketplace slug must carry the brand.
+
+### Loop design
+
+The `loop` skill is the discipline: it writes `.arbiter/task.json` (the same schema the hook reads), verifies every criterion itself, and iterates up to `maxIterations`. The hook is the enforcement. Both exist so the skill alone works in any agent and the hook makes it binding where installed.
+
+### Hook fixes forced by the move
+
+- Feedback moves from stdout-on-exit-2 to a JSON block decision on exit 0.
+- Agents run every hook for an event in parallel, so a project with both the plugin hook and an `init`-wired hook ran `check` twice per stop. `check` now takes an O_EXCL lock next to `task.json` and replays its last answer for a repeat of the same stop event. The replay key is session id, prompt id, `stop_hook_active`, a hash of the last assistant message, and a 10-second window: `prompt_id` alone identifies the user turn, and one turn produces several stop events once a hook blocks.
+- `stop_hook_active` is recorded with each evaluation.

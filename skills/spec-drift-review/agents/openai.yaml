@@ -1,0 +1,3 @@
+interface:
+  display_name: "Spec Drift Review"
+  short_description: "Check code against the task it was meant to implement"

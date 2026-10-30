@@ -1,0 +1,15 @@
+{
+  "name": "arbiter",
+  "description": "Arbiter: adversarial review personas, a parallel critic, and a definition-of-done loop for AI coding agents.",
+  "owner": {
+    "name": "Dustin Fox",
+    "url": "https://github.com/dustinfox-code"
+  },
+  "plugins": [
+    {
+      "name": "arbiter",
+      "source": "./",
+      "description": "Adversarial code review personas, a parallel critic, and a definition-of-done loop enforced by a Stop hook."
+    }
+  ]
+}
